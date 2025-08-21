@@ -1,4 +1,4 @@
-/* ===== Polyfills ===== */
+/* ---------- Polyfills (older iOS Safari) ---------- */
 (function () {
   if (!String.prototype.padStart) {
     String.prototype.padStart = function (t, p) {
@@ -29,7 +29,7 @@
   }
 })();
 
-/* ===== Safe addEventListener options ===== */
+/* ---------- Safe addEventListener options ---------- */
 var _supportsPassive = false;
 try {
   var _opts = Object.defineProperty({}, 'passive', { get: function(){ _supportsPassive = true; } });
@@ -42,7 +42,7 @@ function on(el, t, h, o){ if(!el) return;
   else el.addEventListener(t, h, o);
 }
 
-/* ===== Utilities ===== */
+/* ---------- Utilities ---------- */
 var $  = function (s, ctx){ return (ctx||document).querySelector(s); };
 var $$ = function (s, ctx){ return Array.prototype.slice.call((ctx||document).querySelectorAll(s)); };
 function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
@@ -52,13 +52,13 @@ function cssVar(name){ return getComputedStyle(document.documentElement).getProp
 var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
 function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
 
-/* ===== Color helpers ===== */
+/* ---------- Color helpers ---------- */
 function hexToRgb(hex){ var h=hex.replace('#',''); if(h.length===3){ h=h.split('').map(function(x){return x+x;}).join(''); } var n=parseInt(h,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
 function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(16).padStart(2,'0');}).join(''); }
 function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
 function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
 
-/* ===== Theme (button shows TARGET mode) ===== */
+/* ---------- Theme (button shows TARGET mode) ---------- */
 (function(){
   var root=document.documentElement;
   var toggle=$('#themeToggle'); if(!toggle) return;
@@ -84,11 +84,10 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
   }
 })();
 
-/* ===== DOM refs ===== */
-var board = $('#tierBoard');
-var tray  = $('#tray');
+/* ---------- DOM refs (late-bound on DOMContentLoaded as well) ---------- */
+var board = null, tray = null;
 
-/* ===== Build a row (no <template>) ===== */
+/* ---------- Build a row (no <template>) ---------- */
 function buildRowDom(){
   var row = document.createElement('div'); row.className='tier-row';
   var labelWrap = document.createElement('div'); labelWrap.className='tier-label';
@@ -131,7 +130,7 @@ function tintFrom(color){
 function ensureId(el, prefix){ if(!el.id){ el.id=(prefix||'id')+'-'+uid(); } return el.id; }
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
-/* ===== Create / wire a new row ===== */
+/* ---------- Create / wire a new row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
   var node = dom.row, chip = dom.chip, menuBtn = dom.menuBtn, pop = dom.pop, drop = dom.drop, labelArea = dom.labelWrap;
@@ -171,7 +170,7 @@ function createRow(cfg){
   return node;
 }
 
-/* ===== Defaults ===== */
+/* ---------- Defaults ---------- */
 var defaultTiers = [
   { label:'S', color:'#ff6b6b' },
   { label:'A', color:'#f4a261' },
@@ -193,18 +192,15 @@ var palette = [
 var pIndex = Math.floor(Math.random()*palette.length);
 function nextColor(){ var c = palette[pIndex % palette.length]; pIndex++; return c; }
 
-/* ===== Tokens ===== */
+/* ---------- Tokens ---------- */
 function buildTokenBase(){
   var el = document.createElement('div');
   el.className='token'; el.id = uid();
 
-  // Enable drag on any non-small viewport (mouse OR touch e.g., iPad)
+  // Drag on any non-small viewport (mouse OR touch e.g., iPad)
   if (!isSmall()){
-    if (window.PointerEvent){
-      enablePointerDrag(el);                   // pointer (mouse/touch/pen)
-    } else {
-      enableMouseTouchDragFallback(el);        // legacy fallback
-    }
+    if (window.PointerEvent) enablePointerDrag(el);
+    else enableMouseTouchDragFallback(el);
   }
 
   on(el,'click', function(){
@@ -235,7 +231,7 @@ function buildImageToken(src, alt){
   return el;
 }
 
-/* ===== History (Undo) ===== */
+/* ---------- History (Undo) ---------- */
 var historyStack = []; // {itemId, fromId, toId, beforeId}
 function recordPlacement(itemId, fromId, toId, beforeId){
   if (!fromId || !toId || fromId===toId) return;
@@ -253,7 +249,7 @@ function performMove(itemId, parentId, beforeId){
   parent.appendChild(item);
 }
 
-/* ===== Click-to-place (tray & rows) ===== */
+/* ---------- Click-to-place (tray & rows) ---------- */
 function enableClickToPlace(zone){
   ensureId(zone,'zone');
   on(zone,'click', function(e){
@@ -270,7 +266,7 @@ function enableClickToPlace(zone){
   });
 }
 
-/* ===== Pointer drag (desktop / large screens) ===== */
+/* ---------- Pointer drag (desktop / large screens) ---------- */
 function getDropZoneFromElement(el){
   if (!el) return null;
   var dz=el.closest('.dropzone'); if(dz) return dz;
@@ -345,7 +341,7 @@ function enablePointerDrag(node){
   });
 }
 
-/* Legacy mouse/touch fallback (for browsers without Pointer Events) */
+/* Legacy mouse/touch fallback (browsers without Pointer Events) */
 function enableMouseTouchDragFallback(node){
   var dragging=false, ghost=null, originParent=null, originNext=null, currentZone=null;
   var offsetX=0, offsetY=0, x=0, y=0, raf=null;
@@ -409,7 +405,7 @@ function enableMouseTouchDragFallback(node){
   }
 }
 
-/* ===== Row reorder ===== */
+/* ---------- Row reorder ---------- */
 function enableRowReorder(labelArea, row){
   var placeholder=null;
   function arm(e){
@@ -449,22 +445,26 @@ function enableRowReorder(labelArea, row){
   }
 }
 
-/* ===== Radial picker (mobile) ===== */
+/* ---------- Radial picker (mobile) ---------- */
 var radial = $('#radialPicker');
 var radialOpts = $('.radial-options', radial);
 var radialHighlight = $('.radial-highlight', radial);
 var radialCloseBtn = $('.radial-close', radial);
 var radialForToken = null;
-
+var _radialGeo = []; // [{x,y,row,btn}]
 function rowCount(){ return $$('.tier-row').length; }
-function safeRadius(cx, cy, above, base){
-  var margin = 20;
+
+function safeRadius(cx, cy, preferBelow, base){
+  var margin = 22;
   var h = Math.min(cx - margin, window.innerWidth - cx - margin);
-  var v = above ? (cy - margin) : (window.innerHeight - cy - margin);
-  var r = Math.max(72, Math.min(base, h, v)) - 4; // always fit
-  return r;
+  var v = preferBelow ? (window.innerHeight - cy - margin) : (cy - margin);
+  return Math.max(72, Math.min(base, h, v)) - 2; // always fit
 }
-function refreshRadialOptions(){ if (!isSmall()) return; if (!radial.classList.contains('hidden') && radialForToken){ openRadial(radialForToken); } }
+
+function refreshRadialOptions(){
+  if (!isSmall()) return;
+  if (!radial.classList.contains('hidden') && radialForToken){ openRadial(radialForToken); }
+}
 
 function openRadial(token){
   radialForToken = token;
@@ -472,78 +472,154 @@ function openRadial(token){
   var cx = rect.left + rect.width/2;
   var cy = rect.top + rect.height/2;
 
-  radialOpts.innerHTML='';
-  var rows = $$('.tier-row'); var N = rows.length; if (!N) return;
+  var rows = $$('.tier-row');
+  var labels = rows.map(function(r){ return rowLabel(r); }); // board order (S, A, B, C, D,…)
+  var N = labels.length; if (!N) return;
 
-  // Base radius and angle span depend on count
+  // Prefer BELOW; flip to above only if below cannot fit
   var baseR = 100 + Math.max(0, N-5)*8;
-
-  // Prefer above; flip if not enough space
-  var above = true;
+  var below = true;
   var R = safeRadius(cx, cy, true, baseR);
-  if (R < 84){ above = false; R = safeRadius(cx, cy, false, baseR); }
+  if (R < 84){ below = false; R = safeRadius(cx, cy, false, baseR); }
 
-  var degStart = above ? 200 : 20;
-  var degEnd   = above ? 340 : 160;
+  // Even angles across arc; step computed from span
+  var degStart = below ? 20 : 200;
+  var degEnd   = below ? 160 : 340;
   var step = (degEnd - degStart) / Math.max(1,(N-1));
 
-  radialHighlight.hidden = true;
+  // Positions; then force LEFT→RIGHT order to ensure S A B C D…
+  var positions = [];
+  for (var i=0;i<N;i++){
+    var ang = (degStart + step*i) * Math.PI/180;
+    positions.push({ i:i, ang:ang, x: cx + R*Math.cos(ang), y: cy + R*Math.sin(ang) });
+  }
+  positions.sort(function(a,b){ return a.x - b.x; });
+  _radialGeo = [];
 
+  // Center close button
   radialCloseBtn.style.left = cx+'px';
   radialCloseBtn.style.top  = cy+'px';
 
-  for (var i=0;i<N;i++){
-    (function(i){
-      var row = rows[i];
+  // Draw options (buttons)
+  radialOpts.innerHTML = '';
+  for (var j=0;j<N;j++){
+    (function(j){
+      var row = rows[j];
+      var pos = positions[j];
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
-      btn.textContent = rowLabel(row);
-      btn.style.transitionDelay = (i*25)+'ms';
+      btn.textContent = labels[j];
+      btn.style.left = pos.x+'px';
+      btn.style.top  = pos.y+'px';
+      btn.style.transitionDelay = (j*20)+'ms';
 
-      var ang = (degStart + step*i) * Math.PI/180;
-      var ox = cx + R*Math.cos(ang);
-      var oy = cy + R*Math.sin(ang);
-      btn.style.left = ox+'px'; btn.style.top  = oy+'px';
-
-      function moveHL(){ radialHighlight.hidden=false; radialHighlight.style.left=ox+'px'; radialHighlight.style.top=oy+'px'; }
-      on(btn,'pointerenter', moveHL); on(btn,'focus', moveHL);
-
-      on(btn,'click', function(){
-        if (!radialForToken) return;
-        var zone = row.querySelector('.tier-drop');
-        var fromId = ensureId(radialForToken.parentElement,'zone');
-        ensureId(zone,'zone');
-        zone.appendChild(radialForToken);
-        radialForToken.classList.remove('selected');
-        recordPlacement(radialForToken.id, fromId, zone.id);
-        vib(6);
-        closeRadial();
-      });
+      function focusHL(){
+        radialHighlight.hidden=false;
+        radialHighlight.style.left = pos.x+'px';
+        radialHighlight.style.top  = pos.y+'px';
+        radialHighlight.dataset.index = String(j);
+      }
+      on(btn,'pointerenter', focusHL);
+      on(btn,'focus', focusHL);
+      on(btn,'click', function(){ selectRadialTarget(row); });
 
       radialOpts.appendChild(btn);
-    })(i);
+      _radialGeo.push({x:pos.x, y:pos.y, row:row, btn:btn});
+    })(j);
   }
 
-  // trigger animation
+  // Show (keep visible until selection / X)
   radial.classList.remove('hidden');
-  radial.setAttribute('aria-hidden','false');
-  radial.classList.add('show');
-  setTimeout(function(){ radial.classList.remove('show'); }, 250 + N*25);
-}
-function closeRadial(){ radial.classList.add('hidden'); radial.setAttribute('aria-hidden','true'); radialForToken=null; }
+  radial.classList.add('visible','show');
+  setTimeout(function(){ radial.classList.remove('show'); }, 220 + N*20);
 
-/* Dismiss radial on outside/scroll/resize */
+  // Start highlight at leftmost (i.e., first in board order)
+  if (_radialGeo.length){
+    radialHighlight.hidden=false;
+    radialHighlight.style.left = _radialGeo[0].x+'px';
+    radialHighlight.style.top  = _radialGeo[0].y+'px';
+    radialHighlight.dataset.index = '0';
+  }
+}
+
+// Drag to choose: follow finger, lock to nearest; lift finger = confirm
+on(radial,'pointerdown', function(e){
+  if (radial.classList.contains('hidden')) return;
+  var tracking = true;
+
+  function update(ev){
+    if (!tracking) return;
+    var x = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX);
+    var y = (ev.touches && ev.touches[0] ? ev.touches[0].clientY : ev.clientY);
+    var best = null, bestD = Infinity, bestIndex = 0;
+    for (var k=0;k<_radialGeo.length;k++){
+      var g=_radialGeo[k]; var dx=g.x-x, dy=g.y-y; var d=dx*dx+dy*dy;
+      if (d < bestD){ bestD=d; best=g; bestIndex=k; }
+    }
+    if (best){
+      radialHighlight.hidden=false;
+      radialHighlight.style.left = best.x+'px';
+      radialHighlight.style.top  = best.y+'px';
+      radialHighlight.dataset.index = String(bestIndex);
+    }
+  }
+  function end(){
+    tracking = false;
+    var idx = parseInt(radialHighlight.dataset.index || '0',10);
+    var target = _radialGeo[idx];
+    if (target){ selectRadialTarget(target.row); }
+    cleanup();
+  }
+  function cancel(){ tracking=false; cleanup(); }
+  function cleanup(){
+    document.removeEventListener('pointermove', update);
+    document.removeEventListener('pointerup', end);
+    document.removeEventListener('touchmove', update);
+    document.removeEventListener('touchend', end);
+    document.removeEventListener('pointercancel', cancel);
+    document.removeEventListener('touchcancel', cancel);
+  }
+
+  document.addEventListener('pointermove', update, _supportsPassive?{passive:true}:false);
+  document.addEventListener('pointerup', end, false);
+  document.addEventListener('touchmove', update, _supportsPassive?{passive:true}:false);
+  document.addEventListener('touchend', end, false);
+  document.addEventListener('pointercancel', cancel, false);
+  document.addEventListener('touchcancel', cancel, false);
+}, _supportsPassive?{passive:true}:false);
+
+function selectRadialTarget(row){
+  if (!radialForToken || !row) return;
+  var zone = row.querySelector('.tier-drop');
+  var fromId = ensureId(radialForToken.parentElement,'zone');
+  ensureId(zone,'zone');
+  zone.appendChild(radialForToken);
+  radialForToken.classList.remove('selected');
+  recordPlacement(radialForToken.id, fromId, zone.id);
+  vib(7);
+  closeRadial();
+}
+
+function closeRadial(){
+  radial.classList.add('hidden');
+  radial.classList.remove('visible','show');
+  radial.setAttribute('aria-hidden','true');
+  radialForToken = null;
+  _radialGeo = [];
+}
+
+/* Dismiss when tapping outside or pressing the center X */
 on(document,'click', function(e){
   if (radial.classList.contains('hidden')) return;
-  if (radial.contains(e.target)) return;
-  var sel = $('.token.selected'); if (sel && sel.contains(e.target)) return;
+  if (radial.contains(e.target)) return;                                // allow internal clicks
+  var sel = $('.token.selected'); if (sel && sel.contains(e.target)) return; // tapping the token again
   closeRadial();
 });
 on(radialCloseBtn,'click', closeRadial);
 on(window,'scroll', closeRadial, _supportsPassive?{passive:true}:false);
 on(window,'resize', closeRadial, _supportsPassive?{passive:true}:false);
 
-/* ===== Clear / Undo / Save (fixed-width export) ===== */
+/* ---------- Clear / Undo / Save (fixed-width export) ---------- */
 on($('#trashClear'),'click', function(){
   if (!confirm('Clear the entire tier board? This moves all placed items back to the tray.')) return;
   $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
@@ -574,7 +650,7 @@ on($('#saveBtn'),'click', function(){
   html2canvas(clone, {
     backgroundColor: cssVar('--surface') || null,
     useCORS: true,
-    scale: 2,             // crisp export
+    scale: 2,
     width: 1200,
     windowWidth: 1200
   }).then(function(canvas){
@@ -584,18 +660,38 @@ on($('#saveBtn'),'click', function(){
   }).catch(function(){ cloneWrap.remove(); });
 });
 
-/* ===== Init defaults ===== */
-(function init(){
+/* ---------- Init after DOM is ready ---------- */
+document.addEventListener('DOMContentLoaded', function start(){
+  board = $('#tierBoard'); tray = $('#tray');
+
   // rows
   defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
+
   // tray defaults
   $('#nameColor').value = nextColor();
   communityCast.forEach(function(n,i){ tray.appendChild(buildNameToken(n, palette[i % palette.length])); });
 
   // add tier button
-  on($('#addTierBtn'),'click', function(){ board.appendChild(createRow({label:'NEW', color:'#8b7dff'})); refreshRadialOptions(); });
+  on($('#addTierBtn'),'click', function(){
+    board.appendChild(createRow({label:'NEW', color:'#8b7dff'}));
+    refreshRadialOptions();
+  });
 
-  live('Ready. Desktop/iPad: drag items. Phone: tap a circle to place via the curved picker.');
-})();
+  // creators
+  on($('#addNameBtn'),'click', function(){
+    var name = $('#nameInput').value.trim();
+    if (!name) return;
+    tray.appendChild(buildNameToken(name, $('#nameColor').value));
+    $('#nameInput').value=''; $('#nameColor').value = nextColor();
+  });
+  on($('#imageInput'),'change', function(e){
+    Array.prototype.forEach.call(e.target.files, function(file){
+      if(!file.type || file.type.indexOf('image/')!==0) return;
+      var reader = new FileReader();
+      reader.onload = function(ev){ tray.appendChild(buildImageToken(ev.target.result, file.name)); };
+      reader.readAsDataURL(file);
+    });
+  });
 
-
+  live('Ready. Desktop/iPad: drag items. Phone: tap a circle to place with the curved picker.');
+});
