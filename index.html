@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FSTM – Tier List Maker</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <!-- FSTM: static on mobile; left rail on large screens -->
+  <header class="topbar">
+    <h1 aria-label="F S T M">FSTM</h1>
+  </header>
+
+  <!-- Mobile radial picker (opens above/below a tapped circle) -->
+  <div id="radialPicker" class="radial hidden" aria-hidden="true">
+    <div class="radial-highlight" hidden></div>
+    <button class="radial-close" title="Close menu" aria-label="Close">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18.3 5.71L12 12.01l-6.29-6.3-1.41 1.42 6.3 6.29-6.3 6.29 1.41 1.41 6.29-6.3 6.29 6.3 1.41-1.41-6.3-6.29 6.3-6.29z"/>
+      </svg>
+    </button>
+    <div class="radial-options"></div>
+  </div>
+
+  <main class="layout">
+    <!-- CREATE -->
+    <section class="panel">
+      <h2 class="panel-title">Create Items</h2>
+
+      <div class="tool-row">
+        <label class="tool-label" for="nameInput">Name circle</label>
+        <input id="nameInput" type="text" placeholder="Type a name…" />
+        <input id="nameColor" type="color" title="Circle color" />
+        <button id="addNameBtn" class="btn" title="Add name circle">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+          </span>
+          Add
+        </button>
+      </div>
+
+      <div class="tool-row">
+        <label class="tool-label">Upload images</label>
+        <input id="imageInput" type="file" accept="image/*" multiple />
+      </div>
+
+      <p class="muted tip">
+        Desktop: drag & drop or click a circle then click a row. Mobile: tap a circle to open the curved picker.
+      </p>
+    </section>
+
+    <!-- CONTROLS (static) -->
+    <section class="panel controls-panel" role="region" aria-label="Board controls">
+      <div class="controls">
+        <div class="left">
+          <button id="addTierBtn" class="btn" title="Add a new tier row">
+            <span class="icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 6h18v2H3V6zm8 5h10v2H11v-2zM3 11h6v2H3v-2zm0 5h18v2H3v-2z"/>
+              </svg>
+            </span>
+            Add Tier
+          </button>
+        </div>
+
+        <div class="right">
+          <button id="undoBtn" class="btn" title="Undo last placement" disabled>
+            <span class="icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5V1L5 8l7 7V9c3.31 0 6 2.69 6 6a6 6 0 01-6 6h-1v2h1a8 8 0 000-16h-1z"/>
+              </svg>
+            </span>
+            Undo
+          </button>
+
+          <button id="trashClear" class="btn btn-danger" title="Clear entire tier board">
+            <span class="icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z"/>
+              </svg>
+            </span>
+            Clear Board
+          </button>
+
+          <!-- Theme toggle shows TARGET mode -->
+          <button id="themeToggle" class="btn" title="Toggle theme">
+            <span class="icon theme-icon"></span>
+            <span class="theme-text">Dark</span>
+          </button>
+
+          <button id="saveBtn" class="btn btn-primary" title="Export PNG of the board">
+            <span class="icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 20h14v-2H5v2zM12 2l5 5h-3v6h-4V7H7l5-5z"/>
+              </svg>
+            </span>
+            Save PNG
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOARD -->
+    <section class="panel board-panel">
+      <header class="board-header">
+        <h2 class="panel-title">Tier Board</h2>
+      </header>
+      <div id="tierBoard" class="board" aria-label="Tier board"></div>
+    </section>
+
+    <!-- TRAY -->
+    <section class="panel tray-panel">
+      <div class="tray-header">
+        <h2 class="panel-title">Items Tray</h2>
+      </div>
+      <div id="tray" class="dropzone tray" aria-label="Items tray" tabindex="0"></div>
+    </section>
+  </main>
+
+  <!-- Row template -->
+  <template id="tierRowTemplate">
+    <div class="tier-row">
+      <div class="tier-label" draggable="false">
+        <div class="label-chip" contenteditable="true" spellcheck="false" aria-label="Tier label">NEW</div>
+        <button class="row-menu" title="Row options" aria-label="Row options">⋯</button>
+        <div class="row-popover">
+          <div class="row-option">
+            <span>Label color</span>
+            <input class="labelColor" type="color" value="#ff6b6b" />
+          </div>
+          <div class="row-option">
+            <span>Row color</span>
+            <input class="rowColor" type="color" />
+          </div>
+          <div class="row-buttons">
+            <button class="btn small clearRow" title="Remove all items in this row">Clear row</button>
+            <button class="btn btn-danger small removeRow" title="Delete this row">Delete row</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tier-drop dropzone" aria-label="Drop items here" tabindex="0"></div>
+    </div>
+  </template>
+
+  <div id="live" class="sr-only" aria-live="polite"></div>
+</body>
+</html>
