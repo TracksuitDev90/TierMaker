@@ -1,4 +1,4 @@
-/* ===== Polyfills (for older iOS Safari) ===== */
+/* ===== Polyfills ===== */
 (function () {
   if (!String.prototype.padStart) {
     String.prototype.padStart = function (t, p) {
@@ -73,7 +73,7 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
     if(icon) icon.innerHTML = (target==='Light'
       ? '<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       : '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    // If rows exist, retint them; otherwise this is a no-op.
+    // retint existing rows (if present)
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
       if (drop && drop.dataset.manual!=='true'){
@@ -84,29 +84,22 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
   }
 })();
 
-/* ===== Board state (assigned at start) ===== */
-var board, tray;
+/* ===== DOM refs ===== */
+var board = $('#tierBoard');
+var tray  = $('#tray');
 
-/* ===== Row DOM builder (no <template> needed) ===== */
+/* ===== Build a row (no <template>) ===== */
 function buildRowDom(){
-  var row = document.createElement('div');
-  row.className='tier-row';
-
-  var labelWrap = document.createElement('div');
-  labelWrap.className='tier-label';
+  var row = document.createElement('div'); row.className='tier-row';
+  var labelWrap = document.createElement('div'); labelWrap.className='tier-label';
 
   var chip = document.createElement('div');
-  chip.className='label-chip';
-  chip.setAttribute('contenteditable','true');
-  chip.setAttribute('spellcheck','false');
+  chip.className='label-chip'; chip.setAttribute('contenteditable','true'); chip.setAttribute('spellcheck','false');
 
   var menuBtn = document.createElement('button');
-  menuBtn.className='row-menu';
-  menuBtn.setAttribute('type','button');
-  menuBtn.textContent='⋯';
+  menuBtn.className='row-menu'; menuBtn.type='button'; menuBtn.textContent='⋯';
 
-  var pop = document.createElement('div');
-  pop.className='row-popover';
+  var pop = document.createElement('div'); pop.className='row-popover';
   pop.innerHTML =
     '<div class="row-option"><span>Label color</span><input class="labelColor" type="color" value="#ff6b6b" /></div>' +
     '<div class="row-option"><span>Row color</span><input class="rowColor" type="color" /></div>' +
@@ -118,11 +111,9 @@ function buildRowDom(){
   labelWrap.appendChild(chip); labelWrap.appendChild(menuBtn); labelWrap.appendChild(pop);
 
   var drop = document.createElement('div');
-  drop.className='tier-drop dropzone';
-  drop.setAttribute('tabindex','0');
+  drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
 
   row.appendChild(labelWrap); row.appendChild(drop);
-
   return { row: row, chip: chip, menuBtn: menuBtn, pop: pop, drop: drop, labelWrap: labelWrap };
 }
 
@@ -207,7 +198,14 @@ function buildTokenBase(){
   var el = document.createElement('div');
   el.className='token'; el.id = uid();
 
-  if (!isSmall()){ enablePointerDrag(el); } // desktop drag only
+  // Enable drag on any non-small viewport (mouse OR touch e.g., iPad)
+  if (!isSmall()){
+    if (window.PointerEvent){
+      enablePointerDrag(el);                   // pointer (mouse/touch/pen)
+    } else {
+      enableMouseTouchDragFallback(el);        // legacy fallback
+    }
+  }
 
   on(el,'click', function(){
     var already = el.classList.contains('selected');
@@ -272,13 +270,21 @@ function enableClickToPlace(zone){
   });
 }
 
-/* ===== Pointer-drag (desktop) ===== */
+/* ===== Pointer drag (desktop / large screens) ===== */
+function getDropZoneFromElement(el){
+  if (!el) return null;
+  var dz=el.closest('.dropzone'); if(dz) return dz;
+  var chip=el.closest('.label-chip'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
+  return null;
+}
+
 function enablePointerDrag(node){
   var ghost=null, originParent=null, originNext=null, currentZone=null;
   var offsetX=0, offsetY=0, x=0, y=0, raf=null;
 
   on(node,'pointerdown', function(e){
-    if (isSmall()) return; if (e.button!==0) return;
+    if (isSmall()) return;
+    if (e.button!==0) return;
     node.setPointerCapture(e.pointerId);
     document.body.classList.add('dragging-item');
 
@@ -338,14 +344,72 @@ function enablePointerDrag(node){
     }
   });
 }
-function getDropZoneFromElement(el){
-  if (!el) return null;
-  var dz=el.closest('.dropzone'); if(dz) return dz;
-  var chip=el.closest('.label-chip'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
-  return null;
+
+/* Legacy mouse/touch fallback (for browsers without Pointer Events) */
+function enableMouseTouchDragFallback(node){
+  var dragging=false, ghost=null, originParent=null, originNext=null, currentZone=null;
+  var offsetX=0, offsetY=0, x=0, y=0, raf=null;
+
+  function start(e, clientX, clientY){
+    if (isSmall()) return;
+    dragging=true; document.body.classList.add('dragging-item');
+
+    originParent=node.parentElement; originNext=node.nextElementSibling;
+    var r=node.getBoundingClientRect(); offsetX=clientX-r.left; offsetY=clientY-r.top; x=clientX; y=clientY;
+
+    ghost = node.cloneNode(true); ghost.classList.add('drag-ghost'); document.body.appendChild(ghost);
+    node.classList.add('drag-hidden');
+    loop();
+  }
+  function move(clientX, clientY){ if(!dragging) return; x=clientX; y=clientY; }
+  function end(){
+    if(!dragging) return; dragging=false;
+    cancelAnimationFrame(raf);
+    var target=document.elementFromPoint(x,y);
+    if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    node.classList.remove('drag-hidden');
+    document.body.classList.remove('dragging-item');
+    var zone=getDropZoneFromElement(target);
+    if (zone){
+      var fromId=ensureId(originParent,'zone'), toId=ensureId(zone,'zone');
+      var beforeId = originNext ? ensureId(originNext,'tok') : '';
+      zone.appendChild(node); recordPlacement(node.id, fromId, toId, beforeId);
+      node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
+      var r = zone.closest ? zone.closest('.tier-row') : null;
+      live('Moved "'+(node.innerText||'item')+'" to '+ (r?rowLabel(r):'tray') );
+      vib(6);
+    } else {
+      if (originNext && originNext.parentElement===originParent) originParent.insertBefore(node, originNext);
+      else originParent.appendChild(node);
+    }
+    if (currentZone) currentZone.classList.remove('drag-over');
+    currentZone=null;
+  }
+
+  on(node,'mousedown', function(e){ if(e.button!==0) return; start(e,e.clientX,e.clientY); on(document,'mousemove', onMouseMove); on(document,'mouseup', onMouseUp); });
+  function onMouseMove(e){ move(e.clientX,e.clientY); }
+  function onMouseUp(){ document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); end(); }
+
+  on(node,'touchstart', function(e){ var t=e.touches[0]; start(e,t.clientX,t.clientY); on(document,'touchmove', onTouchMove, _supportsPassive?{passive:true}:false); on(document,'touchend', onTouchEnd, false); }, _supportsPassive?{passive:true}:false);
+  function onTouchMove(e){ var t=e.touches[0]; if(t) move(t.clientX,t.clientY); }
+  function onTouchEnd(){ document.removeEventListener('touchmove', onTouchMove, false); document.removeEventListener('touchend', onTouchEnd, false); end(); }
+
+  function loop(){
+    raf=requestAnimationFrame(loop);
+    ghost.style.transform='translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';
+    var el=document.elementFromPoint(x,y);
+    var zone=getDropZoneFromElement(el);
+    if (currentZone && currentZone!==zone) currentZone.classList.remove('drag-over');
+    if (zone && zone!==currentZone) zone.classList.add('drag-over');
+    currentZone = zone || null;
+
+    var topZone=innerHeight*0.2, bottomZone=innerHeight*0.25, speed=18;
+    if (y < topZone) window.scrollBy(0,-speed);
+    else if (y > innerHeight-bottomZone) window.scrollBy(0,speed);
+  }
 }
 
-/* ===== Row reorder (disable on small touch) ===== */
+/* ===== Row reorder ===== */
 function enableRowReorder(labelArea, row){
   var placeholder=null;
   function arm(e){
@@ -386,8 +450,22 @@ function enableRowReorder(labelArea, row){
 }
 
 /* ===== Radial picker (mobile) ===== */
-var radial, radialOpts, radialHighlight, radialCloseBtn, radialForToken=null;
+var radial = $('#radialPicker');
+var radialOpts = $('.radial-options', radial);
+var radialHighlight = $('.radial-highlight', radial);
+var radialCloseBtn = $('.radial-close', radial);
+var radialForToken = null;
+
+function rowCount(){ return $$('.tier-row').length; }
+function safeRadius(cx, cy, above, base){
+  var margin = 20;
+  var h = Math.min(cx - margin, window.innerWidth - cx - margin);
+  var v = above ? (cy - margin) : (window.innerHeight - cy - margin);
+  var r = Math.max(72, Math.min(base, h, v)) - 4; // always fit
+  return r;
+}
 function refreshRadialOptions(){ if (!isSmall()) return; if (!radial.classList.contains('hidden') && radialForToken){ openRadial(radialForToken); } }
+
 function openRadial(token){
   radialForToken = token;
   var rect = token.getBoundingClientRect();
@@ -397,10 +475,18 @@ function openRadial(token){
   radialOpts.innerHTML='';
   var rows = $$('.tier-row'); var N = rows.length; if (!N) return;
 
-  var R = 120 + Math.max(0, N-5)*10;
-  var margin=16;
-  var degStart=200, degEnd=340; if (cy - R - margin < 0){ degStart=20; degEnd=160; }
+  // Base radius and angle span depend on count
+  var baseR = 100 + Math.max(0, N-5)*8;
+
+  // Prefer above; flip if not enough space
+  var above = true;
+  var R = safeRadius(cx, cy, true, baseR);
+  if (R < 84){ above = false; R = safeRadius(cx, cy, false, baseR); }
+
+  var degStart = above ? 200 : 20;
+  var degEnd   = above ? 340 : 160;
   var step = (degEnd - degStart) / Math.max(1,(N-1));
+
   radialHighlight.hidden = true;
 
   radialCloseBtn.style.left = cx+'px';
@@ -412,11 +498,11 @@ function openRadial(token){
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
       btn.textContent = rowLabel(row);
+      btn.style.transitionDelay = (i*25)+'ms';
 
       var ang = (degStart + step*i) * Math.PI/180;
       var ox = cx + R*Math.cos(ang);
       var oy = cy + R*Math.sin(ang);
-
       btn.style.left = ox+'px'; btn.style.top  = oy+'px';
 
       function moveHL(){ radialHighlight.hidden=false; radialHighlight.style.left=ox+'px'; radialHighlight.style.top=oy+'px'; }
@@ -438,81 +524,78 @@ function openRadial(token){
     })(i);
   }
 
+  // trigger animation
   radial.classList.remove('hidden');
   radial.setAttribute('aria-hidden','false');
+  radial.classList.add('show');
+  setTimeout(function(){ radial.classList.remove('show'); }, 250 + N*25);
 }
 function closeRadial(){ radial.classList.add('hidden'); radial.setAttribute('aria-hidden','true'); radialForToken=null; }
 
-/* ===== Start after DOM is ready ===== */
-document.addEventListener('DOMContentLoaded', function start(){
-  board = $('#tierBoard'); tray = $('#tray');
+/* Dismiss radial on outside/scroll/resize */
+on(document,'click', function(e){
+  if (radial.classList.contains('hidden')) return;
+  if (radial.contains(e.target)) return;
+  var sel = $('.token.selected'); if (sel && sel.contains(e.target)) return;
+  closeRadial();
+});
+on(radialCloseBtn,'click', closeRadial);
+on(window,'scroll', closeRadial, _supportsPassive?{passive:true}:false);
+on(window,'resize', closeRadial, _supportsPassive?{passive:true}:false);
 
-  // Build default rows
+/* ===== Clear / Undo / Save (fixed-width export) ===== */
+on($('#trashClear'),'click', function(){
+  if (!confirm('Clear the entire tier board? This moves all placed items back to the tray.')) return;
+  $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
+});
+
+on($('#undoBtn'),'click', function(){
+  var last = historyStack.pop(); if (!last) return;
+  performMove(last.itemId, last.fromId, last.beforeId);
+  $('#undoBtn').disabled = historyStack.length===0;
+});
+
+on($('#saveBtn'),'click', function(){
+  closeRadial();
+  $$('.row-popover.open').forEach(function(p){ p.classList.remove('open'); });
+  $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+  $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
+
+  // Clone board into an offscreen fixed-width container for consistent PNGs
+  var node = $('#tierBoard');
+  var cloneWrap = document.createElement('div');
+  cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
+  var clone = node.cloneNode(true);
+  clone.style.width = '1200px';
+  clone.style.maxWidth = '1200px';
+  cloneWrap.appendChild(clone);
+  document.body.appendChild(cloneWrap);
+
+  html2canvas(clone, {
+    backgroundColor: cssVar('--surface') || null,
+    useCORS: true,
+    scale: 2,             // crisp export
+    width: 1200,
+    windowWidth: 1200
+  }).then(function(canvas){
+    var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    cloneWrap.remove();
+  }).catch(function(){ cloneWrap.remove(); });
+});
+
+/* ===== Init defaults ===== */
+(function init(){
+  // rows
   defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
-
-  // Build default community tokens
+  // tray defaults
   $('#nameColor').value = nextColor();
   communityCast.forEach(function(n,i){ tray.appendChild(buildNameToken(n, palette[i % palette.length])); });
 
-  // Wire controls
+  // add tier button
   on($('#addTierBtn'),'click', function(){ board.appendChild(createRow({label:'NEW', color:'#8b7dff'})); refreshRadialOptions(); });
-  on($('#undoBtn'),'click', function(){
-    var last = historyStack.pop(); if (!last) return;
-    performMove(last.itemId, last.fromId, last.beforeId);
-    $('#undoBtn').disabled = historyStack.length===0;
-  });
-  on($('#trashClear'),'click', function(){
-    if (!confirm('Clear the entire tier board? This moves all placed items back to the tray.')) return;
-    $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
-  });
-  on($('#saveBtn'),'click', function(){
-    closeRadial();
-    $$('.row-popover.open').forEach(function(p){ p.classList.remove('open'); });
-    $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
-    $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
-    $$('.label-chip.dragOver').forEach(function(z){ z.classList.remove('dragOver'); });
 
-    html2canvas($('#tierBoard'), {
-      backgroundColor: cssVar('--surface') || null,
-      useCORS: true,
-      scale: Math.min(3, window.devicePixelRatio || 2)
-    }).then(function(canvas){
-      var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
-      document.body.appendChild(a); a.click(); a.remove();
-    });
-  });
+  live('Ready. Desktop/iPad: drag items. Phone: tap a circle to place via the curved picker.');
+})();
 
-  // Name/image creators
-  on($('#addNameBtn'),'click', function(){
-    var name = $('#nameInput').value.trim();
-    if (!name) return;
-    tray.appendChild(buildNameToken(name, $('#nameColor').value));
-    $('#nameInput').value=''; $('#nameColor').value = nextColor();
-  });
-  on($('#imageInput'),'change', function(e){
-    Array.prototype.forEach.call(e.target.files, function(file){
-      if(!file.type || file.type.indexOf('image/')!==0) return;
-      var reader = new FileReader();
-      reader.onload = function(ev){ tray.appendChild(buildImageToken(ev.target.result, file.name)); };
-      reader.readAsDataURL(file);
-    });
-  });
 
-  // Radial picker DOM refs + listeners (mobile)
-  radial = $('#radialPicker'); radialOpts = $('.radial-options', radial);
-  radialHighlight = $('.radial-highlight', radial); radialCloseBtn = $('.radial-close', radial);
-  on(document,'click', function(e){
-    if (radial.classList.contains('hidden')) return;
-    if (radial.contains(e.target)) return;
-    var sel = $('.token.selected'); if (sel && sel.contains(e.target)) return;
-    closeRadial();
-  });
-  on(radialCloseBtn,'click', closeRadial);
-  on(window,'scroll', closeRadial, _supportsPassive?{passive:true}:false);
-  on(window,'resize', closeRadial, _supportsPassive?{passive:true}:false);
-
-  live('Ready. Drag on desktop; tap a circle for the curved picker on mobile.');
-});
-
-/* ===== Helpers used above ===== */
-function refreshRadialOptions(){ if (!isSmall()) return; if (!radial || radial.classList.contains('hidden') || !radialForToken) return; openRadial(radialForToken); }
