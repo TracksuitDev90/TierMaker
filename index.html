@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#0f1115" />
   <title>FSTM — Tier List Maker</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="wrap">
@@ -46,7 +46,7 @@
     <section class="panel" aria-labelledby="controlsTitle">
       <h2 id="controlsTitle" class="section-title sr">Board Controls</h2>
       <div class="controls">
-        <button id="addTierBtn" class="btn" type="button">
+        <button id="addTierBtn" class="btn btn-success" type="button">
           <span class="ico" aria-hidden="true">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
           </span>
@@ -83,18 +83,20 @@
 
     <!-- Tier board -->
     <section class="panel" id="boardPanel" aria-labelledby="boardTitle">
-      <h2 id="boardTitle" class="board-title">Tier Board</h2>
+      <!-- Editable title; if left empty, it will be omitted from the PNG -->
+      <h2 id="boardTitle" class="board-title" contenteditable="true" aria-label="Tier title" spellcheck="false"></h2>
       <div id="tierBoard" aria-label="Tier board"></div>
     </section>
 
-    <!-- Items tray -->
-    <section class="panel" aria-labelledby="trayTitle">
-      <h2 id="trayTitle" class="board-title">Items Tray</h2>
-      <div id="tray" role="list" aria-label="Available items"></div>
+    <!-- Image storage (was Items Tray) -->
+    <section class="panel" aria-labelledby="storageTitle">
+      <h2 id="storageTitle" class="board-title">Image Storage</h2>
+      <div id="tray" class="dropzone" role="list" aria-label="Image Storage"></div>
     </section>
 
     <!-- Mobile radial picker -->
     <div id="radialPicker" class="radial hidden" aria-hidden="true">
+      <div class="radial-backdrop" aria-hidden="true"></div>
       <div class="radial-options"></div>
       <div class="radial-highlight" hidden></div>
       <button class="radial-close" type="button" aria-label="Close">
