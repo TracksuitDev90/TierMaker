@@ -29,7 +29,7 @@
   }
 })();
 
-/* ---------- Event util ---------- */
+/* ---------- Event helper ---------- */
 var _supportsPassive = false;
 try {
   var _opts = Object.defineProperty({}, 'passive', { get: function(){ _supportsPassive = true; } });
@@ -42,7 +42,7 @@ function on(el, t, h, o){ if(!el) return;
   else el.addEventListener(t, h, o);
 }
 
-/* ---------- Utilities ---------- */
+/* ---------- Utils ---------- */
 var $  = function (s, ctx){ return (ctx||document).querySelector(s); };
 var $$ = function (s, ctx){ return Array.prototype.slice.call((ctx||document).querySelectorAll(s)); };
 function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
@@ -50,9 +50,10 @@ function live(msg){ var n=$('#live'); if(!n) return; n.textContent=''; setTimeou
 function vib(ms){ if('vibrate' in navigator) navigator.vibrate(ms||8); }
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
-function isSmall(){ return !(window.matchMedia && window.matchMedia('(pointer: fine)').matches); }
+/* WIDTH-BASED: phones only (iPad gets desktop behavior) */
+function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
 
-/* ---------- Color helpers ---------- */
+/* Colors */
 function hexToRgb(hex){ var h=hex.replace('#',''); if(h.length===3){ h=h.split('').map(function(x){return x+x;}).join(''); } var n=parseInt(h,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
 function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(16).padStart(2,'0');}).join(''); }
 function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
@@ -79,7 +80,7 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
     var themeMeta = document.querySelector('meta[name="theme-color"]');
     if (themeMeta) themeMeta.setAttribute('content', cssVar('--surface') || '#0f1115');
 
-    // retint rows
+    // retint row backgrounds
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
       if (chip && drop && drop.dataset.manual!=='true'){
@@ -93,7 +94,7 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
 /* ---------- DOM refs ---------- */
 var board = null, tray = null;
 
-/* ---------- Build row ---------- */
+/* ---------- Build a row ---------- */
 function buildRowDom(){
   var row = document.createElement('div'); row.className='tier-row';
   var labelWrap = document.createElement('div'); labelWrap.className='tier-label';
@@ -147,7 +148,7 @@ function createRow(cfg){
   chip.style.background = cfg.color;
   chip.style.color = contrastColor(cfg.color);
 
-  // ARIA wiring
+  // ARIA
   chip.id = chip.id || ('chip-' + uid());
   node.setAttribute('role','group');
   node.setAttribute('aria-labelledby', chip.id);
@@ -164,6 +165,7 @@ function createRow(cfg){
     e.stopPropagation();
     var opened = $('.row-popover.open'); if(opened && opened!==pop) opened.classList.remove('open');
     pop.classList.toggle('open');
+    if (pop.classList.contains('open')) adjustPopover(pop, labelArea);
   });
 
   on($('.labelColor', pop),'input', function(e){
@@ -184,7 +186,34 @@ function createRow(cfg){
   return node;
 }
 
-/* Close any open row popover when clicking elsewhere */
+/* Ensure popover stays inside viewport */
+function adjustPopover(pop, anchor){
+  // Default styles (desktop)
+  pop.style.left = 'calc(100% + 8px)';
+  pop.style.right = 'auto';
+  pop.style.top = '50%';
+  pop.style.transform = 'translateY(-50%)';
+
+  var r = pop.getBoundingClientRect();
+  var vw = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+
+  // If it overflows right, flip to left
+  if (r.right > vw - 8){
+    pop.style.left = 'auto';
+    pop.style.right = '8px';
+    pop.style.transform = 'translateY(-50%)';
+  }
+
+  // On small screens, center below the chip
+  if (isSmall()){
+    pop.style.left = '50%';
+    pop.style.right = 'auto';
+    pop.style.top = 'calc(100% + 8px)';
+    pop.style.transform = 'translate(-50%,0)';
+  }
+}
+
+/* Close open popover when clicking elsewhere */
 on(document,'click', function(e){
   var opened = $('.row-popover.open');
   if (!opened) return;
@@ -202,12 +231,11 @@ var defaultTiers = [
 ];
 
 var communityCast = [
-  "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo","Harry",
+  "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Meegan","Munch","Paper",
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
 
-/* Expanded flat palette */
 var palette = [
   '#f97316','#ef4444','#22c55e','#3b82f6','#a78bfa','#06b6d4','#eab308','#10b981',
   '#f43f5e','#8b5cf6','#0ea5e9','#84cc16','#fb923c','#f472b6','#14b8a6','#60a5fa',
@@ -220,19 +248,21 @@ function nextColor(){ var c = palette[pIndex % palette.length]; pIndex++; return
 function buildTokenBase(){
   var el = document.createElement('div');
   el.className='token'; el.id = uid();
-  el.setAttribute('tabindex','0');
-  el.setAttribute('role','listitem');
-  el.style.touchAction = 'none';
-  el.setAttribute('draggable', 'false');
+  el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
+  el.style.touchAction = 'none'; el.setAttribute('draggable','false');
 
   if (!isSmall()){
     if (window.PointerEvent) enablePointerDrag(el);
     else enableMouseTouchDragFallback(el);
   }
 
-  on(el,'click', function(){
+  on(el,'click', function(ev){
+    // Prevent zone click handler from firing behind us (fixes "jump to bottom")
+    ev.stopPropagation();
+
     var already = el.classList.contains('selected');
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+
     if (!already){
       el.classList.add('selected');
       if (isSmall()) openRadial(el);
@@ -263,7 +293,7 @@ function buildImageToken(src, alt){
   return el;
 }
 
-/* ---------- History (Undo) ---------- */
+/* ---------- History ---------- */
 var historyStack = []; // {itemId, fromId, toId, beforeId}
 function recordPlacement(itemId, fromId, toId, beforeId){
   if (!fromId || !toId || fromId===toId) return;
@@ -281,7 +311,7 @@ function performMove(itemId, parentId, beforeId){
   parent.appendChild(item);
 }
 
-/* ---------- Nearest insert helper ---------- */
+/* ---------- Nearest insert ---------- */
 function nearestTokenInZone(zone, x, y, except){
   var toks = Array.prototype.slice.call(zone.querySelectorAll('.token'));
   var best = null, bestD = Infinity;
@@ -299,9 +329,18 @@ function nearestTokenInZone(zone, x, y, except){
 function enableClickToPlace(zone){
   ensureId(zone,'zone');
   on(zone,'click', function(e){
+    // If the radial is open, ignore placements (prevents accidental moves on phones)
+    var radial = $('#radialPicker');
+    if (radial && !radial.classList.contains('hidden')) return;
+
+    // If user clicked the menu/popover, ignore
     if (e.target.closest && (e.target.closest('.row-menu') || e.target.closest('.row-popover'))) return;
+
     var selected = $('.token.selected'); if (!selected) return;
     var fromId = ensureId(selected.parentElement,'zone');
+    // If clicking the same zone, do nothing (avoid "send to bottom")
+    if (fromId === zone.id) return;
+
     var originNext = selected.nextElementSibling;
     var beforeId = originNext ? ensureId(originNext,'tok') : '';
     zone.appendChild(selected);
@@ -310,20 +349,18 @@ function enableClickToPlace(zone){
     var r = zone.closest ? zone.closest('.tier-row') : null;
     live('Moved "'+(selected.innerText||'item')+'" to '+ (r?rowLabel(r):'Image Storage') );
     vib(6);
-    closeRadial();
   });
 }
 
-/* ---------- Get drop zone ---------- */
+/* ---------- Get dropzone ---------- */
 function getDropZoneFromElement(el){
   if (!el) return null;
-  // accept explicit dropzones and #tray even if it lacks the class
   var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
   var chip=el.closest('.label-chip'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
   return null;
 }
 
-/* ---------- Pointer drag (desktop / large) ---------- */
+/* ---------- Desktop drag (Pointer Events) ---------- */
 function enablePointerDrag(node){
   var ghost=null, originParent=null, originNext=null, currentZone=null;
   var offsetX=0, offsetY=0, x=0, y=0, raf=null;
@@ -389,7 +426,7 @@ function enablePointerDrag(node){
   });
 }
 
-/* Legacy mouse/touch fallback (no Pointer Events) */
+/* ---------- Fallback drag (legacy) ---------- */
 function enableMouseTouchDragFallback(node){
   var dragging=false, ghost=null, originParent=null, originNext=null, currentZone=null;
   var offsetX=0, offsetY=0, x=0, y=0, raf=null;
@@ -461,7 +498,7 @@ function enableRowReorder(labelArea, row){
   function arm(e){
     if (e.target.closest && (e.target.closest('.row-menu') || e.target.closest('.row-popover'))) return;
     var chip = $('.label-chip', row); if (document.activeElement===chip) return;
-    if (isSmall() && ('ontouchstart' in window || navigator.maxTouchPoints>0)) return;
+    if (isSmall() && (('ontouchstart' in window) || navigator.maxTouchPoints>0)) return;
     row.setAttribute('draggable','true');
   }
   on(labelArea,'mousedown', arm);
@@ -469,13 +506,14 @@ function enableRowReorder(labelArea, row){
 
   on(row,'dragstart', function(){
     document.body.classList.add('dragging-item');
-    placeholder = document.createElement('div');
-    placeholder.className='tier-row';
-    placeholder.style.height = row.getBoundingClientRect().height+'px';
-    placeholder.style.borderRadius='12px';
-    placeholder.style.border='2px dashed rgba(139,125,255,.25)';
-    board.insertBefore(placeholder, row.nextSibling);
+    var ph = document.createElement('div');
+    ph.className='tier-row';
+    ph.style.height = row.getBoundingClientRect().height+'px';
+    ph.style.borderRadius='12px';
+    ph.style.border='2px dashed rgba(139,125,255,.25)';
+    board.insertBefore(ph, row.nextSibling);
     setTimeout(function(){ row.style.display='none'; },0);
+    placeholder = ph;
   });
   on(row,'dragend', function(){
     row.style.display='';
@@ -495,7 +533,7 @@ function enableRowReorder(labelArea, row){
   }
 }
 
-/* ---------- Radial picker (mobile) ---------- */
+/* ---------- Radial (mobile) ---------- */
 var radial = $('#radialPicker');
 var radialBackdrop = radial ? $('.radial-backdrop', radial) : null;
 var radialOpts = radial ? $('.radial-options', radial) : null;
@@ -507,21 +545,21 @@ var radialCancelRequested = false;
 
 function rowCount(){ return $$('.tier-row').length; }
 
-/* keep options within viewport w/o changing the visual density */
+/* Keep uniform look but nudge away from edges without changing radius */
 function uniformCenter(cx, cy, R){
   var M = 14;
   var nx = Math.max(M + R, Math.min(window.innerWidth - M - R, cx));
-  var ny = Math.max(M + R, cy); // ensure room above
+  var ny = Math.max(M + R, cy);
   return {x:nx, y:ny};
 }
 
 function refreshRadialOptions(){
   if (!isSmall() || !radial || !radialForToken) return;
-  openRadial(radialForToken); // recompute on rotate/resize
+  openRadial(radialForToken);
 }
 
 function openRadial(token){
-  if (!radial) return;
+  if (!radial || !isSmall()) return;
   radialCancelRequested = false;
   radialForToken = token;
 
@@ -533,16 +571,13 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  // --- Uniform, compressed arc settings ---
-  var BASE_R = 78;                   // fixed small radius for compressed look
+  var BASE_R = 78;
   var center = uniformCenter(cx, cy, BASE_R);
   var R = BASE_R;
 
-  // Narrow arc (about 110°), always above
-  var degStart = 205, degEnd = 315;
+  var degStart = 205, degEnd = 315;               // uniform compressed arc above
   var step = (degEnd - degStart) / Math.max(1,(N-1));
 
-  // Compute positions then force left→right order (S, A, B…)
   var positions = [];
   for (var i=0;i<N;i++){
     var ang = (degStart + step*i) * Math.PI/180;
@@ -551,11 +586,9 @@ function openRadial(token){
   positions.sort(function(a,b){ return a.x - b.x; });
   _radialGeo = [];
 
-  // Close button on token center (not the shifted center)
   radialCloseBtn.style.left = cx+'px';
   radialCloseBtn.style.top  = cy+'px';
 
-  // Build options
   radialOpts.innerHTML = '';
   for (var j=0;j<N;j++){
     (function(j){
@@ -592,11 +625,13 @@ function updateHighlight(index){
     var b = _radialGeo[i].btn;
     if (b) b.classList.toggle('is-highlighted', i===index);
   }
-  radialHighlight.hidden = true; // chip itself is neon
-  radialHighlight.dataset.index = String(index);
+  if (radialHighlight) {
+    radialHighlight.hidden = true; // chip itself is neon
+    radialHighlight.dataset.index = String(index);
+  }
 }
 
-/* Drag anywhere on the screen to change selection */
+/* Drag finger anywhere to choose; X cancels cleanly */
 function _radialTrackStart(e){
   if (!radial || radial.classList.contains('hidden')) return;
   var tracking = true;
@@ -614,7 +649,7 @@ function _radialTrackStart(e){
   }
   function end(){
     if (radialCancelRequested) { cleanup(); return; }
-    var idx = parseInt(radialHighlight.dataset.index || '0',10);
+    var idx = parseInt(radialHighlight && radialHighlight.dataset.index || '0',10);
     var target = _radialGeo[idx];
     if (target){ selectRadialTarget(target.row); }
     cleanup();
@@ -637,15 +672,14 @@ function _radialTrackStart(e){
   document.addEventListener('pointercancel', cancel, false);
   document.addEventListener('touchcancel', cancel, false);
 }
-if (radialBackdrop){
-  on(radialBackdrop,'pointerdown', _radialTrackStart, _supportsPassive?{passive:true}:false);
-  on(radialBackdrop,'touchstart', _radialTrackStart, _supportsPassive?{passive:true}:false);
+var rb = radialBackdrop;
+if (rb){
+  on(rb,'pointerdown', _radialTrackStart, _supportsPassive?{passive:true}:false);
+  on(rb,'touchstart', _radialTrackStart, _supportsPassive?{passive:true}:false);
 }
-
-/* Close button should not trigger selection */
 if (radialCloseBtn){
-  on(radialCloseBtn, 'pointerdown', function(e){ radialCancelRequested = true; e.stopPropagation(); }, false);
-  on(radialCloseBtn, 'click', function(e){ e.stopPropagation(); closeRadial(); }, false);
+  on(radialCloseBtn,'pointerdown', function(e){ radialCancelRequested = true; e.stopPropagation(); }, false);
+  on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false);
 }
 
 function selectRadialTarget(row){
@@ -671,11 +705,9 @@ function closeRadial(){
   radialCancelRequested = false;
   _radialGeo = [];
 }
-
-/* Keep radial positioned on rotate/resize while open */
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- Clear / Undo / Save (panel clone) ---------- */
+/* ---------- Clear / Undo / Save ---------- */
 on($('#trashClear'),'click', function(){
   if (!confirm('Clear the entire tier board? This moves all placed items back to Image Storage.')) return;
   $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
@@ -700,7 +732,7 @@ on($('#saveBtn'),'click', function(){
   var clone = panel.cloneNode(true);
   var title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'').length===0){
-    title.parentNode.removeChild(title); // omit empty title
+    title.parentNode.removeChild(title);
   }
 
   clone.style.width = '1200px';
@@ -721,7 +753,7 @@ on($('#saveBtn'),'click', function(){
   }).catch(function(){ cloneWrap.remove(); });
 });
 
-/* ---------- Keyboard quick-jump: 1..N sends selected to row N ---------- */
+/* ---------- Keyboard quick-jump ---------- */
 on(document,'keydown', function(e){
   var selected = $('.token.selected'); if(!selected) return;
   var n = parseInt(e.key,10);
@@ -731,9 +763,9 @@ on(document,'keydown', function(e){
     if (row){
       var zone = row.querySelector('.tier-drop');
       var fromId = ensureId(selected.parentElement,'zone');
+      if (fromId === ensureId(zone,'zone')) return;
       var originNext = selected.nextElementSibling;
       var beforeId = originNext ? ensureId(originNext,'tok') : '';
-      ensureId(zone,'zone');
       zone.appendChild(selected);
       selected.classList.remove('selected');
       recordPlacement(selected.id, fromId, zone.id, beforeId);
@@ -780,7 +812,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // allow click-to-place to tray as well (works even if tray lacks .dropzone)
+  // click-to-place allowed on the tray too
   enableClickToPlace(tray);
 
   live('Ready. Desktop/iPad: drag items. Phone: tap a circle to place with the curved picker.');
