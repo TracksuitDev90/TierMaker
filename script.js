@@ -1,12 +1,3 @@
-/* =========================================================
-   Tier Maker — final polish (deploy)
-   - Row delete X (returns items to Image Storage)
-   - Curated unique palette; custom items still auto-contrast
-   - Export-only larger labels (with per-token refit)
-   - Mobile picker dismisses on outside tap; retargets on token tap
-   - FLIP animations + reliable "send to end"
-   ========================================================= */
-
 /* ---------- Polyfills ---------- */
 (function(){
   if(!String.prototype.padStart){
