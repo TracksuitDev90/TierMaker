@@ -446,7 +446,7 @@ function openRadial(token){
   var rows=$$('.tier-row'), labels=rows.map(function(r){return rowLabel(r);}), N=labels.length; if(!N) return;
 
   // Uniform arc; compute radius to avoid overlap: chord >= diameter+gap
-  var D=44, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
+  var D=44, GAP=4, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
   var BASE_R=110, need=(D+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05))); // avoid tiny angle div by 0
   var R=Math.max(BASE_R,need);
   var center=uniformCenter(cx,cy,R);
