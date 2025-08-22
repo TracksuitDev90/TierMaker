@@ -46,8 +46,9 @@ function contrastColor(bgHex){var L=relativeLuminance(hexToRgb(bgHex));return L>
     if(icon)icon.innerHTML=(target==='Light'
       ?'<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       :'<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    var themeMeta=document.querySelector('meta[name="theme-color"]');
-    if(themeMeta) themeMeta.setAttribute('content',cssVar('--surface')||'#0f1115');
+    var meta=document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.setAttribute('content',cssVar('--surface')||'#0f1115');
+    // re-tint rows
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row),drop=$('.tier-drop',row);
       if(chip&&drop&&drop.dataset.manual!=='true'){drop.style.background=tintFrom(chip.dataset.color||'#8b7dff');}
@@ -58,7 +59,7 @@ function contrastColor(bgHex){var L=relativeLuminance(hexToRgb(bgHex));return L>
 /* ---------- DOM ---------- */
 var board=null,tray=null;
 
-/* ---------- FLIP ---------- */
+/* ---------- FLIP animation ---------- */
 function flipZones(zones, mutate){
   var prev=new Map();
   zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
@@ -88,12 +89,12 @@ function buildRowDom(){
 
   var chip=document.createElement('div');chip.className='label-chip';chip.setAttribute('contenteditable','true');chip.setAttribute('spellcheck','false');
 
-  // delete X
+  // Delete button (sibling of chip so it always renders)
   var del=document.createElement('button');del.className='row-del';del.type='button';
   del.innerHTML='<svg viewBox="0 0 24 24"><path d="M18.3 5.7L12 12l-6.3-6.3-1.4 1.4L10.6 13.4l-6.3 6.3 1.4 1.4L12 14.4l6.3 6.3 1.4-1.4-6.3-6.3 6.3-6.3z"/></svg>';
 
-  chip.appendChild(del);
   labelWrap.appendChild(chip);
+  labelWrap.appendChild(del);
 
   var drop=document.createElement('div');drop.className='tier-drop dropzone';drop.setAttribute('tabindex','0');
 
@@ -129,7 +130,6 @@ function createRow(cfg){
   var tint=tintFrom(cfg.color);drop.style.background=tint;drop.dataset.manual='false';
 
   on(chip,'keydown',function(e){if(e.key==='Enter'){e.preventDefault();chip.blur();}});
-
   on(del,'click',function(){
     var tokens=$$('.token',drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
@@ -150,21 +150,20 @@ var defaultTiers=[
   {label:'D',color:'#a78bfa'}
 ];
 
+/* Pre-render names (black text only) */
 var communityCast=[
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Meegan","Munch","Paper",
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
-
-/* Curated unique palette (32 distinct) — mix of dark & light so some labels are black */
-var palette=[
-  '#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6',
-  '#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a78bfa','#ec4899','#f472b6',
-  '#fca5a5','#fde68a','#fbcfe8','#bae6fd','#bbf7d0','#fef08a','#c4b5fd','#93c5fd',
-  '#7dd3fc','#86efac','#fda4af','#d9f99d','#fecdd3','#a7f3d0','#fef3c7','#c7d2fe'
+/* Pastel palette (unique, black text readable) */
+var presetPalette=[
+  '#FDE68A','#FBCFE8','#BBF7D0','#BAE6FD','#FECACA','#DDD6FE','#FDE1AF','#C7F9CC',
+  '#B8E0FE','#FFD6E8','#D1FAE5','#EDE9FE','#FCE7F3','#FAF089','#E9D5FF','#FAD2CF',
+  '#C8E7FF','#E7FBBE','#FFE3B3','#CCE5FF','#F3D2FF','#FBE7C6','#E2F0CB','#FFD1DC',
+  '#C6F7E2','#E6E6FA','#FFE4B5','#D5F5E3','#FFECB3','#E0F2FE'
 ];
-var pIndex=0;
-function nextColor(){var c=palette[pIndex%palette.length];pIndex++;return c;}
+var pIndex=0; function nextPreset(){var c=presetPalette[pIndex%presetPalette.length];pIndex++;return c;}
 
 /* ---------- Fit label per token ---------- */
 function fitLabelSize(label, container, base, min){
@@ -172,7 +171,7 @@ function fitLabelSize(label, container, base, min){
   label.style.fontSize=base+'px';
   label.style.whiteSpace='nowrap';
   var tries=0;
-  while(tries<16 && (label.scrollWidth>container.clientWidth-10 || label.scrollHeight>container.clientHeight-10)){
+  while(tries<18 && (label.scrollWidth>container.clientWidth-10 || label.scrollHeight>container.clientHeight-10)){
     base-=1; if(base<=13){ label.style.whiteSpace='pre-wrap'; }
     if(base<min){ base=min; break; }
     label.style.fontSize=base+'px'; tries++;
@@ -206,9 +205,10 @@ function buildTokenBase(){
   on(el,'keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();}});
   return el;
 }
-function buildNameToken(name,color){
+function buildNameToken(name,color,forceBlack){
   var el=buildTokenBase();el.style.background=color;
-  var label=document.createElement('div');label.className='label';label.textContent=name;label.style.color=contrastColor(color);
+  var label=document.createElement('div');label.className='label';label.textContent=name;
+  label.style.color = forceBlack ? '#111' : contrastColor(color);
   el.appendChild(label); fitLabelSize(label, el);
   return el;
 }
@@ -232,15 +232,15 @@ function performMove(itemId,parentId,beforeId){
   });
 }
 
-/* ---------- Insert helper (allows append) ---------- */
+/* ---------- Insert helper (append if needed) ---------- */
 function insertBeforeForPoint(zone,x,y,except){
   var tokens=[].slice.call(zone.querySelectorAll('.token')).filter(function(t){return t!==except;});
   if(tokens.length===0) return null;
   var centers=tokens.map(function(t){var r=t.getBoundingClientRect();return {t:t,cx:r.left+r.width/2,cy:r.top+r.height/2};});
   var rightMost=centers.reduce(function(a,b){return (b.cx>a.cx)?b:a;});
   var zr=zone.getBoundingClientRect();
-  if(x > rightMost.cx + 24) return null;  // append on far right
-  if(y > zr.bottom - 12) return null;     // append near bottom
+  if(x > rightMost.cx + 24) return null;
+  if(y > zr.bottom - 12) return null;
   var best=null,bestD=Infinity;
   centers.forEach(function(c){var dx=c.cx-x,dy=c.cy-y;var d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=c.t;}});
   return best;
@@ -267,7 +267,7 @@ function enableClickToPlace(zone){
 function getDropZoneFromElement(el){
   if(!el) return null;
   var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
-  var chip=el.closest('.label-chip'); if(chip){var row=chip.closest('.tier-row');return row?row.querySelector('.tier-drop'):null;}
+  var chip=el.closest('.tier-label'); if(chip){var row=chip.closest('.tier-row');return row?row.querySelector('.tier-drop'):null;}
   return null;
 }
 
@@ -442,7 +442,7 @@ function enableRowReorder(labelArea,row){
   }
 }
 
-/* ---------- Radial (uniform & dismiss/retarget) ---------- */
+/* ---------- Radial picker ---------- */
 var radial=$('#radialPicker'),
     radialOpts=radial?$('.radial-options',radial):null,
     radialHighlight=radial?$('.radial-highlight',radial):null,
@@ -460,8 +460,8 @@ function openRadial(token){
   var rect=token.getBoundingClientRect(), cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
   var rows=$$('.tier-row'), labels=rows.map(function(r){return rowLabel(r);}), N=labels.length; if(!N) return;
 
-  var D=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
-  var BASE_R=96, need=(D+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
+  var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
+  var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
   var R=Math.max(BASE_R,need);
   var center=uniformCenter(cx,cy,R);
 
@@ -474,56 +474,58 @@ function openRadial(token){
   for(let j=0;j<N;j++){
     (function(j){
       var row=rows[j], pos=positions[j];
-      var btn=document.createElement('button'); btn.type='button'; btn.className='radial-option'; btn.textContent=labels[j];
-      btn.style.left=pos.x+'px'; btn.style.top=pos.y+'px'; btn.style.transitionDelay=(j*16)+'ms';
-      function focusHL(){ updateHighlight(j); }
-      on(btn,'pointerenter',focusHL); on(btn,'focus',focusHL);
+      var btn=document.createElement('button'); btn.type='button'; btn.className='radial-option';
+      btn.style.left=pos.x+'px'; btn.style.top=pos.y+'px'; btn.style.transitionDelay=(j*14)+'ms';
+      var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
+
+      function makeHot(){ updateHighlight(j); }
+      on(btn,'pointerenter',makeHot);
+      on(btn,'pointerdown',function(e){ e.preventDefault(); updateHighlight(j); }); // more forgiving
       on(btn,'click',function(){ selectRadialTarget(row); });
+
       radialOpts.appendChild(btn); _radialGeo.push({x:pos.x,y:pos.y,row:row,btn:btn});
     })(j);
   }
 
-  // Close when tapping anywhere not on an option/close or when retargeting to another token
-  function backdropHandler(ev){
+  // global backdrop handler: retarget to another tray token OR dismiss
+  function backdrop(ev){
     if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
 
-    // retarget to another tray token
     var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
     var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
-    var prevPE = radial.style.pointerEvents;
-    radial.style.pointerEvents = 'none';
-    var under = document.elementFromPoint(x,y);
-    radial.style.pointerEvents = prevPE || 'auto';
-    var otherToken = under && under.closest && under.closest('#tray .token');
-    if(otherToken){
+    var prevPE=radial.style.pointerEvents; radial.style.pointerEvents='none';
+    var under=document.elementFromPoint(x,y); radial.style.pointerEvents=prevPE||'auto';
+    var other=under && under.closest && under.closest('#tray .token');
+    if(other){
       closeRadial();
       $$('.token.selected').forEach(function(t){t.classList.remove('selected');});
-      otherToken.classList.add('selected');
-      openRadial(otherToken);
-      ev.preventDefault();
-      return;
+      other.classList.add('selected');
+      openRadial(other);
+      ev.preventDefault(); return;
     }
-
-    // Otherwise: simple outside tap → close
+    // tap elsewhere → dismiss
     closeRadial();
   }
-  radial.addEventListener('pointerdown', backdropHandler, {passive:false});
-  radial._backdropHandler = backdropHandler; // store to remove later
+  radial.addEventListener('pointerdown',backdrop,{passive:false});
+  radial._backdropHandler=backdrop;
 
   radial.setAttribute('aria-hidden','false'); radial.classList.remove('hidden'); radial.classList.add('visible','show');
-  setTimeout(function(){radial.classList.remove('show');},180+N*16);
+  setTimeout(function(){radial.classList.remove('show');},160+N*14);
   if(_radialGeo.length){ updateHighlight(0); }
 }
+
 function updateHighlight(index){
   if(!_radialGeo.length) return;
-  for(var i=0;i<_radialGeo.length;i++){var b=_radialGeo[i].btn; if(b) b.classList.toggle('is-hot', i===index);}
+  for(var i=0;i<_radialGeo.length;i++){
+    _radialGeo[i].btn.classList.toggle('is-hot',i===index);
+  }
   if(radialHighlight){ radialHighlight.hidden=true; radialHighlight.dataset.index=String(index); }
 }
+
 if(radialCloseBtn){
   on(radialCloseBtn,'pointerdown',function(e){radialCancelRequested=true;e.stopPropagation();},false);
   on(radialCloseBtn,'click',function(e){e.stopPropagation();closeRadial();},false);
 }
-
 function selectRadialTarget(row){
   if(!radialForToken||!row) return;
   var zone=row.querySelector('.tier-drop');
@@ -537,7 +539,7 @@ function selectRadialTarget(row){
 }
 function closeRadial(){
   if(!radial) return;
-  if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
+  if(radial._backdropHandler){ radial.removeEventListener('pointerdown',radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden'); radial.classList.remove('visible','show'); radial.setAttribute('aria-hidden','true');
   radialForToken=null; radialCancelRequested=false; _radialGeo=[];
 }
@@ -556,19 +558,21 @@ on($('#undoBtn'),'click',function(){
 on($('#saveBtn'),'click',function(){
   closeRadial();
 
-  var panel=$('#boardPanel'); var cloneWrap=document.createElement('div');
+  var panel=$('#boardPanel');
+  var cloneWrap=document.createElement('div');
   cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
   var clone=panel.cloneNode(true);
 
-  // bump label text size only in export + refit
+  // Export-only: bigger labels + re-fit + ensure center
+  var style=document.createElement('style');
+  style.textContent='.token .label{font-size:22px!important;line-height:1!important;display:flex!important;align-items:center!important;justify-content:center!important}';
+  clone.appendChild(style);
+
   $$('.token .label', clone).forEach(function(lbl){
-    var container=lbl.parentElement;
-    lbl.style.fontSize='22px';
+    var c=lbl.parentElement, base=22, min=12, tries=0;
     lbl.style.whiteSpace='nowrap';
-    // simple fit down if needed
-    var base=22,min=12,tries=0;
-    while(tries<16 && (lbl.scrollWidth>container.clientWidth-10 || lbl.scrollHeight>container.clientHeight-10)){
-      base-=1; if(base<=13){ lbl.style.whiteSpace='pre-wrap'; }
+    while(tries<18 && (lbl.scrollWidth>c.clientWidth-10 || lbl.scrollHeight>c.clientHeight-10)){
+      base--; if(base<=13){ lbl.style.whiteSpace='pre-wrap'; }
       if(base<min){ base=min; break; }
       lbl.style.fontSize=base+'px'; tries++;
     }
@@ -608,21 +612,21 @@ document.addEventListener('DOMContentLoaded',function start(){
 
   defaultTiers.forEach(function(t){board.appendChild(createRow(t));});
 
-  var nameColor=$('#nameColor'), nameInput=$('#nameInput');
-  if(nameColor) nameColor.value=palette[0];
-  communityCast.forEach(function(n,i){ tray.appendChild(buildNameToken(n,palette[i%palette.length])); });
+  // Pre-rendered people: forced black text, unique pastels
+  communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n,nextPreset(), true)); });
 
+  // add tier
   on($('#addTierBtn'),'click',function(){
-    board.appendChild(createRow({label:'NEW',color:nextColor()}));
+    board.appendChild(createRow({label:'NEW',color:'#8b7dff'}));
     refreshRadialOptions();
   });
 
+  // creators
   on($('#addNameBtn'),'click',function(){
-    if(!nameInput||!nameColor) return;
+    var nameInput=$('#nameInput'), nameColor=$('#nameColor'); if(!nameInput||!nameColor) return;
     var name=nameInput.value.trim(); if(!name) return;
-    var tok=buildNameToken(name,nameColor.value);
-    tray.appendChild(tok);
-    nameInput.value=''; nameColor.value=nextColor();
+    tray.appendChild(buildNameToken(name, nameColor.value, false));
+    nameInput.value=''; nameColor.value = nextPreset();
   });
   on($('#imageInput'),'change',function(e){
     Array.prototype.forEach.call(e.target.files,function(file){
@@ -633,12 +637,12 @@ document.addEventListener('DOMContentLoaded',function start(){
     });
   });
 
-  // Help text
+  // help text
   var help=$('#helpText');
   if(help){
-    help.textContent = (isSmall()
-      ? 'Phone: tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
-      : 'Desktop/iPad: drag circles into rows. You can reorder or drag back to Image Storage.') +
+    help.textContent=(isSmall()
+      ?'Phone: tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
+      :'Desktop/iPad: drag circles into rows. You can reorder or drag back to Image Storage.')+
       ' Tap the small X on a tier label to delete that row (its items return to Image Storage).';
   }
 
