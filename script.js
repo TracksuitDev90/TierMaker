@@ -1,11 +1,3 @@
-/* =========================================================
-   Tier Maker — script.js (refined to spec)
-   - Desktop/iPad (pointer: fine): smooth drag & drop (no auto-scroll)
-   - Phone/Coarse pointers: tap a circle to open curved picker
-   - Radial picker: accurate nearest-point highlight; X truly cancels
-   - PNG export: clones panel (title + board). Omits title if blank.
-   ========================================================= */
-
 /* ---------- Polyfills ---------- */
 (function () {
   if (!String.prototype.padStart) {
