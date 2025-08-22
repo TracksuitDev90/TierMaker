@@ -51,7 +51,7 @@ function contrastColor(bgHex){var L=relativeLuminance(hexToRgb(bgHex));return L>
     if(themeMeta) themeMeta.setAttribute('content',cssVar('--surface')||'#0f1115');
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row),drop=$('.tier-drop',row);
-      if(chip&&drop&&drop.dataset.manual!=='true'){var nt=tintFrom(chip.dataset.color||'#8b7dff');drop.style.background=nt;}
+      if(chip&&drop&&drop.dataset.manual!=='true'){drop.style.background=tintFrom(chip.dataset.color||'#8b7dff');}
     });
   }
 })();
@@ -77,8 +77,9 @@ function buildRowDom(){
       '<button class="btn btn-danger small removeRow" type="button">Delete row</button>'+
     '</div>';
 
+  /* Place the menu INSIDE the chip so it nests perfectly */
+  chip.appendChild(menuBtn);
   labelWrap.appendChild(chip);
-  labelWrap.appendChild(menuBtn);
   labelWrap.appendChild(pop);
 
   var drop=document.createElement('div');drop.className='tier-drop dropzone';drop.setAttribute('tabindex','0');
@@ -137,11 +138,22 @@ function createRow(cfg){
   return node;
 }
 
+/* Keep popover on-screen (flip horizontally/vertically if needed) */
 function adjustPopover(pop){
-  pop.style.left='calc(100% + 8px)';pop.style.right='auto';pop.style.top='50%';pop.style.transform='translateY(-50%)';
-  var r=pop.getBoundingClientRect(),vw=Math.max(document.documentElement.clientWidth,window.innerWidth||0);
+  pop.style.left='calc(100% + 8px)';pop.style.right='auto';pop.style.top='50%';pop.style.bottom='auto';pop.style.transform='translateY(-50%)';
+
+  var vw=Math.max(document.documentElement.clientWidth,window.innerWidth||0);
+  var vh=Math.max(document.documentElement.clientHeight,window.innerHeight||0);
+  var r=pop.getBoundingClientRect();
+
   if(r.right>vw-8){pop.style.left='auto';pop.style.right='8px';pop.style.transform='translateY(-50%)';}
-  if(isSmall()){pop.style.left='50%';pop.style.right='auto';pop.style.top='calc(100% + 8px)';pop.style.transform='translate(-50%,0)';}
+  if(isSmall()){
+    pop.style.left='50%';pop.style.right='auto';pop.style.transform='translate(-50%,0)';pop.style.top='calc(100% + 8px)';
+    setTimeout(function(){ // after styles settle, if it overflows bottom -> show above
+      var rr=pop.getBoundingClientRect();
+      if(rr.bottom>vh-8){pop.style.top='auto';pop.style.bottom='calc(100% + 8px)';pop.style.transform='translate(-50%,0)';}
+    },0);
+  }
 }
 
 on(document,'click',function(e){
@@ -181,7 +193,7 @@ function buildTokenBase(){
   if(!isSmall()){
     if(window.PointerEvent) enablePointerDrag(el); else enableMouseTouchDragFallback(el);
   }else{
-    enableMobileTouchDrag(el); // drag inside rows/back to storage
+    enableMobileTouchDrag(el); // drag when already in a row
   }
 
   on(el,'click',function(ev){
@@ -310,7 +322,7 @@ function enablePointerDrag(node){
   });
 }
 
-/* ---------- Legacy fallback (no Pointer Events) ---------- */
+/* ---------- Legacy fallback ---------- */
 function enableMouseTouchDragFallback(node){
   var dragging=false,ghost=null,originParent=null,originNext=null,currentZone=null;
   var offsetX=0,offsetY=0,x=0,y=0,raf=null;
@@ -345,13 +357,13 @@ function enableMouseTouchDragFallback(node){
   function loop(){raf=requestAnimationFrame(loop);ghost.style.transform='translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';var el=document.elementFromPoint(x,y);var zone=getDropZoneFromElement(el);if(currentZone&&currentZone!==zone)currentZone.classList.remove('drag-over');if(zone&&zone!==currentZone)zone.classList.add('drag-over');currentZone=zone||null;}
 }
 
-/* ---------- Mobile touch drag (inside rows/back to tray) ---------- */
+/* ---------- Mobile touch drag (already in row) ---------- */
 function enableMobileTouchDrag(node){
-  if(!('PointerEvent' in window)) return; // modern mobiles have it; otherwise click-to-place will still work
+  if(!('PointerEvent' in window)) return;
   on(node,'pointerdown',function(e){
     if(!isSmall()) return;
-    if(e.pointerType!=='touch' && e.pointerType!=='pen') return; // only finger/pencil
-    if(!node.closest('.tier-drop')) return; // only start drag when already placed in a row
+    if(e.pointerType!=='touch' && e.pointerType!=='pen') return;
+    if(!node.closest('.tier-drop')) return; // only when placed
     e.preventDefault();
     node.setPointerCapture(e.pointerId);
     document.body.classList.add('dragging-item');
@@ -422,21 +434,17 @@ function enableRowReorder(labelArea,row){
   }
 }
 
-/* ---------- Radial (no neon) ---------- */
-var radial=$('#radialPicker'), radialBackdrop=radial?$('.radial-backdrop',radial):null, radialOpts=radial?$('.radial-options',radial):null, radialHighlight=radial?$('.radial-highlight',radial):null, radialCloseBtn=radial?$('.radial-close',radial):null;
+/* ---------- Radial (uniform & smaller) ---------- */
+var radial=$('#radialPicker'),
+    radialBackdrop=radial?$('.radial-backdrop',radial):null,
+    radialOpts=radial?$('.radial-options',radial):null,
+    radialHighlight=radial?$('.radial-highlight',radial):null,
+    radialCloseBtn=radial?$('.radial-close',radial):null;
+
 var radialForToken=null,_radialGeo=[],radialCancelRequested=false;
-
 function rowCount(){return $$('.tier-row').length;}
-
-function uniformCenter(cx,cy,R){
-  var M=14, nx=Math.max(M+R,Math.min(window.innerWidth-M-R,cx)), ny=Math.max(M+R,cy);
-  return {x:nx,y:ny};
-}
-
-function refreshRadialOptions(){
-  if(!isSmall()||!radial||!radialForToken) return;
-  openRadial(radialForToken);
-}
+function uniformCenter(cx,cy,R){var M=16;return {x:Math.max(M+R,Math.min(window.innerWidth-M-R,cx)), y:Math.max(M+R,cy)};}
+function refreshRadialOptions(){if(!isSmall()||!radial||!radialForToken) return; openRadial(radialForToken);}
 
 function openRadial(token){
   if(!radial||!isSmall()) return;
@@ -445,9 +453,8 @@ function openRadial(token){
   var rect=token.getBoundingClientRect(), cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
   var rows=$$('.tier-row'), labels=rows.map(function(r){return rowLabel(r);}), N=labels.length; if(!N) return;
 
-  // Uniform arc; compute radius to avoid overlap: chord >= diameter+gap
-  var D=44, GAP=4, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
-  var BASE_R=110, need=(D+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05))); // avoid tiny angle div by 0
+  var D=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
+  var BASE_R=96, need=(D+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
   var R=Math.max(BASE_R,need);
   var center=uniformCenter(cx,cy,R);
 
@@ -473,15 +480,50 @@ function openRadial(token){
   setTimeout(function(){radial.classList.remove('show');},180+N*16);
   if(_radialGeo.length){ updateHighlight(0); }
 }
-
 function updateHighlight(index){
   if(!_radialGeo.length) return;
   for(var i=0;i<_radialGeo.length;i++){var b=_radialGeo[i].btn; if(b) b.classList.toggle('is-hot', i===index);}
   if(radialHighlight){ radialHighlight.hidden=true; radialHighlight.dataset.index=String(index); }
 }
 
+/* Backdrop: drag-to-choose OR retarget to another token behind the overlay */
+function backdropDown(ev){
+  if(!radial || radial.classList.contains('hidden')) return;
+
+  // Detect if the user tapped another tray token under the overlay
+  var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
+  var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
+
+  var prevPE = radial.style.pointerEvents;
+  radial.style.pointerEvents = 'none';           // peek beneath overlay
+  var under = document.elementFromPoint(x,y);
+  radial.style.pointerEvents = prevPE || 'auto';
+
+  var otherToken = under && under.closest && under.closest('#tray .token');
+  if(otherToken){
+    // Move picker to the newly tapped token without requiring X
+    closeRadial();
+    $$('.token.selected').forEach(function(t){t.classList.remove('selected');});
+    otherToken.classList.add('selected');
+    openRadial(otherToken);
+    ev.preventDefault();
+    return;
+  }
+
+  // Otherwise start the drag-to-select behaviour
+  _radialTrackStart(ev);
+}
+var rb = radialBackdrop;
+if (rb){
+  on(rb,'pointerdown', backdropDown, _supportsPassive?{passive:false}:false);
+  on(rb,'touchstart',  backdropDown, _supportsPassive?{passive:false}:false);
+}
+if (radialCloseBtn){
+  on(radialCloseBtn,'pointerdown',function(e){radialCancelRequested=true;e.stopPropagation();},false);
+  on(radialCloseBtn,'click',function(e){e.stopPropagation();closeRadial();},false);
+}
+
 function _radialTrackStart(e){
-  if(!radial||radial.classList.contains('hidden')) return;
   var tracking=true;
   function update(ev){
     if(!tracking||radialCancelRequested) return;
@@ -502,8 +544,6 @@ function _radialTrackStart(e){
   document.addEventListener('touchmove',update,_supportsPassive?{passive:true}:false);
   document.addEventListener('touchend',end,false);
 }
-if(radialBackdrop){on(radialBackdrop,'pointerdown',_radialTrackStart,_supportsPassive?{passive:true}:false); on(radialBackdrop,'touchstart',_radialTrackStart,_supportsPassive?{passive:true}:false);}
-if(radialCloseBtn){on(radialCloseBtn,'pointerdown',function(e){radialCancelRequested=true;e.stopPropagation();},false); on(radialCloseBtn,'click',function(e){e.stopPropagation();closeRadial();},false);}
 
 function selectRadialTarget(row){
   if(!radialForToken||!row) return;
@@ -523,7 +563,12 @@ on($('#undoBtn'),'click',function(){var last=historyStack.pop(); if(!last)return
 on($('#saveBtn'),'click',function(){
   closeRadial(); $$('.row-popover.open').forEach(function(p){p.classList.remove('open');}); $$('.token.selected').forEach(function(t){t.classList.remove('selected');}); $$('.dropzone.drag-over').forEach(function(z){z.classList.remove('drag-over');});
   var panel=$('#boardPanel'); var cloneWrap=document.createElement('div'); cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
-  var clone=panel.cloneNode(true); var title=clone.querySelector('.board-title'); if(title && title.textContent.replace(/\s+/g,'').length===0){ title.parentNode.removeChild(title); clone.querySelector('.title-pen')?.parentNode?.remove(); }
+  var clone=panel.cloneNode(true);
+  var title=clone.querySelector('.board-title');
+  if(title && title.textContent.replace(/\s+/g,'').length===0){
+    title.parentNode.removeChild(title);
+    var pen = clone.querySelector('.title-pen'); if(pen && pen.parentNode) pen.parentNode.removeChild(pen);
+  }
   clone.style.width='1200px'; clone.style.maxWidth='1200px'; cloneWrap.appendChild(clone); document.body.appendChild(cloneWrap);
   html2canvas(clone,{backgroundColor:cssVar('--surface')||null,useCORS:true,scale:2,width:1200,windowWidth:1200}).then(function(canvas){
     var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png'; document.body.appendChild(a); a.click(); a.remove(); cloneWrap.remove();
@@ -565,7 +610,7 @@ document.addEventListener('DOMContentLoaded',function start(){
     });
   });
 
-  // Help text per device
+  // Help text
   var help=$('#helpText');
   if(help){
     help.textContent = isSmall()
@@ -573,8 +618,7 @@ document.addEventListener('DOMContentLoaded',function start(){
       : 'Desktop/iPad: drag circles into rows. You can reorder or drag back to Image Storage at any time.';
   }
 
-  // allow click-to-place on the tray too
-  enableClickToPlace(tray);
+  enableClickToPlace(tray); // allow placements back to tray too
 
   live('Ready.');
 });
