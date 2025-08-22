@@ -58,7 +58,7 @@ function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(1
 function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
 function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
 
-/* ---------- Theme ---------- */
+/* ---------- Theme toggle ---------- */
 (function(){
   var root=document.documentElement;
   var toggle=$('#themeToggle'); if(!toggle) return;
@@ -74,12 +74,12 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
     if(icon) icon.innerHTML = (target==='Light'
       ? '<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       : '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    if (toggle) toggle.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
+    toggle.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
 
     var themeMeta = document.querySelector('meta[name="theme-color"]');
     if (themeMeta) themeMeta.setAttribute('content', cssVar('--surface') || '#0f1115');
 
-    // retint row surfaces
+    // retint rows
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
       if (chip && drop && drop.dataset.manual!=='true'){
@@ -93,7 +93,7 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
 /* ---------- DOM refs ---------- */
 var board = null, tray = null;
 
-/* ---------- Build a row ---------- */
+/* ---------- Build row ---------- */
 function buildRowDom(){
   var row = document.createElement('div'); row.className='tier-row';
   var labelWrap = document.createElement('div'); labelWrap.className='tier-label';
@@ -184,7 +184,7 @@ function createRow(cfg){
   return node;
 }
 
-/* One global delegated click to close any open row popover */
+/* Close any open row popover when clicking elsewhere */
 on(document,'click', function(e){
   var opened = $('.row-popover.open');
   if (!opened) return;
@@ -202,7 +202,7 @@ var defaultTiers = [
 ];
 
 var communityCast = [
-  "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
+  "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo","Harry",
   "Gavin","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Meegan","Munch","Paper",
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
@@ -281,7 +281,7 @@ function performMove(itemId, parentId, beforeId){
   parent.appendChild(item);
 }
 
-/* ---------- Drop helpers (for accurate reordering) ---------- */
+/* ---------- Nearest insert helper ---------- */
 function nearestTokenInZone(zone, x, y, except){
   var toks = Array.prototype.slice.call(zone.querySelectorAll('.token'));
   var best = null, bestD = Infinity;
@@ -295,7 +295,7 @@ function nearestTokenInZone(zone, x, y, except){
   return best;
 }
 
-/* ---------- Click-to-place (zone + tray) ---------- */
+/* ---------- Click-to-place (rows & tray) ---------- */
 function enableClickToPlace(zone){
   ensureId(zone,'zone');
   on(zone,'click', function(e){
@@ -314,14 +314,16 @@ function enableClickToPlace(zone){
   });
 }
 
-/* ---------- Pointer drag (desktop / large) ---------- */
+/* ---------- Get drop zone ---------- */
 function getDropZoneFromElement(el){
   if (!el) return null;
-  var dz=el.closest('.dropzone'); if(dz) return dz;
+  // accept explicit dropzones and #tray even if it lacks the class
+  var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
   var chip=el.closest('.label-chip'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
   return null;
 }
 
+/* ---------- Pointer drag (desktop / large) ---------- */
 function enablePointerDrag(node){
   var ghost=null, originParent=null, originNext=null, currentZone=null;
   var offsetX=0, offsetY=0, x=0, y=0, raf=null;
@@ -387,7 +389,7 @@ function enablePointerDrag(node){
   });
 }
 
-/* Legacy mouse/touch fallback */
+/* Legacy mouse/touch fallback (no Pointer Events) */
 function enableMouseTouchDragFallback(node){
   var dragging=false, ghost=null, originParent=null, originNext=null, currentZone=null;
   var offsetX=0, offsetY=0, x=0, y=0, raf=null;
@@ -495,32 +497,34 @@ function enableRowReorder(labelArea, row){
 
 /* ---------- Radial picker (mobile) ---------- */
 var radial = $('#radialPicker');
-var radialBackdrop = $('.radial-backdrop', radial);
-var radialOpts = $('.radial-options', radial);
-var radialHighlight = $('.radial-highlight', radial);
-var radialCloseBtn = $('.radial-close', radial);
+var radialBackdrop = radial ? $('.radial-backdrop', radial) : null;
+var radialOpts = radial ? $('.radial-options', radial) : null;
+var radialHighlight = radial ? $('.radial-highlight', radial) : null;
+var radialCloseBtn = radial ? $('.radial-close', radial) : null;
 var radialForToken = null;
 var _radialGeo = []; // [{x,y,row,btn}]
 var radialCancelRequested = false;
 
 function rowCount(){ return $$('.tier-row').length; }
 
-function safeRadius(cx, cy, preferBelow, base){
-  var margin = 22;
-  var h = Math.min(cx - margin, window.innerWidth - cx - margin);
-  var v = preferBelow ? (window.innerHeight - cy - margin) : (cy - margin);
-  return Math.max(72, Math.min(base, h, v)) - 2;
+/* keep options within viewport w/o changing the visual density */
+function uniformCenter(cx, cy, R){
+  var M = 14;
+  var nx = Math.max(M + R, Math.min(window.innerWidth - M - R, cx));
+  var ny = Math.max(M + R, cy); // ensure room above
+  return {x:nx, y:ny};
 }
 
 function refreshRadialOptions(){
-  if (!isSmall()) return;
-  if (!radial.classList.contains('hidden') && radialForToken){ openRadial(radialForToken); }
+  if (!isSmall() || !radial || !radialForToken) return;
+  openRadial(radialForToken); // recompute on rotate/resize
 }
 
 function openRadial(token){
   if (!radial) return;
   radialCancelRequested = false;
   radialForToken = token;
+
   var rect = token.getBoundingClientRect();
   var cx = rect.left + rect.width/2;
   var cy = rect.top + rect.height/2;
@@ -529,23 +533,29 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  var baseR = 100 + Math.max(0, N-5)*8;
-  var R = safeRadius(cx, cy, false, baseR);
+  // --- Uniform, compressed arc settings ---
+  var BASE_R = 78;                   // fixed small radius for compressed look
+  var center = uniformCenter(cx, cy, BASE_R);
+  var R = BASE_R;
 
-  var degStart = 200, degEnd = 340; // above
+  // Narrow arc (about 110°), always above
+  var degStart = 205, degEnd = 315;
   var step = (degEnd - degStart) / Math.max(1,(N-1));
 
+  // Compute positions then force left→right order (S, A, B…)
   var positions = [];
   for (var i=0;i<N;i++){
     var ang = (degStart + step*i) * Math.PI/180;
-    positions.push({ i:i, ang:ang, x: cx + R*Math.cos(ang), y: cy + R*Math.sin(ang) });
+    positions.push({ i:i, ang:ang, x: center.x + R*Math.cos(ang), y: center.y + R*Math.sin(ang) });
   }
   positions.sort(function(a,b){ return a.x - b.x; });
   _radialGeo = [];
 
+  // Close button on token center (not the shifted center)
   radialCloseBtn.style.left = cx+'px';
   radialCloseBtn.style.top  = cy+'px';
 
+  // Build options
   radialOpts.innerHTML = '';
   for (var j=0;j<N;j++){
     (function(j){
@@ -556,7 +566,7 @@ function openRadial(token){
       btn.textContent = labels[j];
       btn.style.left = pos.x+'px';
       btn.style.top  = pos.y+'px';
-      btn.style.transitionDelay = (j*20)+'ms';
+      btn.style.transitionDelay = (j*18)+'ms';
 
       function focusHL(){ updateHighlight(j); }
       on(btn,'pointerenter', focusHL);
@@ -571,7 +581,7 @@ function openRadial(token){
   radial.setAttribute('aria-hidden','false');
   radial.classList.remove('hidden');
   radial.classList.add('visible','show');
-  setTimeout(function(){ radial.classList.remove('show'); }, 220 + N*20);
+  setTimeout(function(){ radial.classList.remove('show'); }, 200 + N*18);
 
   if (_radialGeo.length){ updateHighlight(0); }
 }
@@ -579,18 +589,16 @@ function openRadial(token){
 function updateHighlight(index){
   if (!_radialGeo.length) return;
   for (var i=0;i<_radialGeo.length;i++){
-    if (_radialGeo[i].btn) _radialGeo[i].btn.classList.toggle('is-highlighted', i===index);
+    var b = _radialGeo[i].btn;
+    if (b) b.classList.toggle('is-highlighted', i===index);
   }
-  var g = _radialGeo[index];
-  radialHighlight.hidden=false;
-  radialHighlight.style.left = g.x+'px';
-  radialHighlight.style.top  = g.y+'px';
+  radialHighlight.hidden = true; // chip itself is neon
   radialHighlight.dataset.index = String(index);
 }
 
-/* Track drags anywhere on the screen via the backdrop */
+/* Drag anywhere on the screen to change selection */
 function _radialTrackStart(e){
-  if (radial.classList.contains('hidden')) return;
+  if (!radial || radial.classList.contains('hidden')) return;
   var tracking = true;
 
   function update(ev){
@@ -629,12 +637,16 @@ function _radialTrackStart(e){
   document.addEventListener('pointercancel', cancel, false);
   document.addEventListener('touchcancel', cancel, false);
 }
-on($('.radial-backdrop', radial),'pointerdown', _radialTrackStart, _supportsPassive?{passive:true}:false);
-on($('.radial-backdrop', radial),'touchstart', _radialTrackStart, _supportsPassive?{passive:true}:false);
+if (radialBackdrop){
+  on(radialBackdrop,'pointerdown', _radialTrackStart, _supportsPassive?{passive:true}:false);
+  on(radialBackdrop,'touchstart', _radialTrackStart, _supportsPassive?{passive:true}:false);
+}
 
 /* Close button should not trigger selection */
-on(radialCloseBtn, 'pointerdown', function(e){ radialCancelRequested = true; e.stopPropagation(); }, false);
-on(radialCloseBtn, 'click', function(e){ e.stopPropagation(); closeRadial(); }, false);
+if (radialCloseBtn){
+  on(radialCloseBtn, 'pointerdown', function(e){ radialCancelRequested = true; e.stopPropagation(); }, false);
+  on(radialCloseBtn, 'click', function(e){ e.stopPropagation(); closeRadial(); }, false);
+}
 
 function selectRadialTarget(row){
   if (!radialForToken || !row) return;
@@ -651,6 +663,7 @@ function selectRadialTarget(row){
 }
 
 function closeRadial(){
+  if (!radial) return;
   radial.classList.add('hidden');
   radial.classList.remove('visible','show');
   radial.setAttribute('aria-hidden','true');
@@ -658,6 +671,9 @@ function closeRadial(){
   radialCancelRequested = false;
   _radialGeo = [];
 }
+
+/* Keep radial positioned on rotate/resize while open */
+on(window,'resize', refreshRadialOptions);
 
 /* ---------- Clear / Undo / Save (panel clone) ---------- */
 on($('#trashClear'),'click', function(){
@@ -732,14 +748,12 @@ document.addEventListener('DOMContentLoaded', function start(){
   board = $('#tierBoard'); tray = $('#tray');
 
   // rows
-  var defaultTiers = window.defaultTiers || defaultTiers; // ensure defined
-  defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
+  var initTiers = (window.defaultTiers && Array.isArray(window.defaultTiers)) ? window.defaultTiers : defaultTiers;
+  initTiers.forEach(function(t){ board.appendChild(createRow(t)); });
 
   // tray defaults
-  var nameColor = $('#nameColor');
+  var nameColor = $('#nameColor'); var nameInput = $('#nameInput');
   if (nameColor) nameColor.value = nextColor();
-  var nameInput = $('#nameInput');
-
   communityCast.forEach(function(n,i){ tray.appendChild(buildNameToken(n, palette[i % palette.length])); });
 
   // add tier
@@ -765,6 +779,9 @@ document.addEventListener('DOMContentLoaded', function start(){
       reader.readAsDataURL(file);
     });
   });
+
+  // allow click-to-place to tray as well (works even if tray lacks .dropzone)
+  enableClickToPlace(tray);
 
   live('Ready. Desktop/iPad: drag items. Phone: tap a circle to place with the curved picker.');
 });
