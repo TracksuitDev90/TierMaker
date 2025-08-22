@@ -139,12 +139,23 @@ a { color: inherit; text-decoration: none; }
   text-transform: uppercase; letter-spacing: .5px; user-select: none;
 }
 
+/* Tidier 3-dot menu: bottom-right, darker bg, clear tap target */
 .row-menu {
-  position: absolute; right: 10px; top: 10px;
-  width: 48px; height: 48px; border-radius: 12px;
-  background: var(--surface); color: var(--text);
-  border: 1px solid var(--border); box-shadow: var(--shadow);
-  display: grid; place-items: center; font-size: 26px; line-height: 1; opacity: .9; cursor: pointer;
+  position: absolute;
+  right: 8px; bottom: 8px; top: auto;
+  width: 38px; height: 38px; border-radius: 10px;
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 6px 14px rgba(0,0,0,.35);
+  display: grid; place-items: center;
+  font-size: 20px; line-height: 1;
+  opacity: .95;
+}
+:root[data-theme="light"] .row-menu{
+  background: rgba(0,0,0,.72);
+  color: #fff;
+  border-color: rgba(0,0,0,.12);
 }
 
 .row-popover {
@@ -246,16 +257,14 @@ body.dragging-item { cursor: grabbing; user-select: none; -webkit-user-select: n
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 
 /* ---------- Radial picker (mobile) ---------- */
+/* Always-uniform compressed arc + full-chip neon highlight */
 .radial{
   position:fixed; left:0; top:0; width:100vw; height:100vh; z-index:60; pointer-events:auto;
   filter: drop-shadow(0 8px 24px rgba(0,0,0,.35));
 }
 .radial.hidden{ display:none }
-.radial-backdrop{
-  position:absolute; inset:0; background:transparent; /* captures drags anywhere */
-}
+.radial-backdrop{ position:absolute; inset:0; background:transparent; }
 
-/* keep options visible after opening */
 .radial.visible .radial-option,
 .radial.show .radial-option{
   opacity:1; transform: translate(-50%,-50%) scale(1);
@@ -263,7 +272,6 @@ body.dragging-item { cursor: grabbing; user-select: none; -webkit-user-select: n
 
 .radial-options{ position:relative; width:100%; height:100%; }
 
-/* Radial options: larger hit targets */
 .radial-option{
   position:absolute;
   width:44px; height:44px; border-radius:999px;
@@ -271,22 +279,23 @@ body.dragging-item { cursor: grabbing; user-select: none; -webkit-user-select: n
   background:var(--surface-raised); color:var(--text);
   border:1px solid var(--border);
   box-shadow:0 2px 10px rgba(0,0,0,.25);
-  transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease, color .12s ease;
-  transform: translate(-50%,-50%) scale(.85);
+  transition: transform .12s ease, opacity .12s ease, background-color .12s ease, color .12s ease, box-shadow .12s ease;
+  transform: translate(-50%,-50%) scale(.88);
   opacity:0;
   pointer-events:auto; user-select:none; cursor:pointer;
 }
-.radial-option.is-highlighted{ color:#000; } /* legible over neon highlight */
-.radial-option:focus-visible{ outline:none; box-shadow: var(--focus) }
+.radial-option.is-highlighted{
+  background: var(--neon);
+  color: #000;
+  transform: translate(-50%,-50%) scale(1.08);
+  box-shadow: 0 0 0 8px rgba(216,255,63,.22);
+}
 
+/* Kept as a marker but visually hidden (chip itself is neon) */
 .radial-highlight{
-  position:absolute; width:52px; height:52px; border-radius:999px;
-  background:var(--neon);
-  transform: translate(-50%,-50%) scale(0.95);
-  transition: transform .12s ease, left .08s ease, top .08s ease;
-  pointer-events:none; opacity:.95;
-  box-shadow:0 0 0 6px rgba(216,255,63,.22);
-  z-index: -1; /* sit under the buttons */
+  position:absolute; width:1px; height:1px; border-radius:999px;
+  transform: translate(-50%,-50%);
+  pointer-events:none; opacity:0;
 }
 
 .radial-close{
