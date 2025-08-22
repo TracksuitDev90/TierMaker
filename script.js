@@ -1,3 +1,12 @@
+/* =========================================================
+   Tier Maker — final polish (deploy)
+   - Row delete X (returns items to Image Storage)
+   - Curated unique palette; custom items still auto-contrast
+   - Export-only larger labels (with per-token refit)
+   - Mobile picker dismisses on outside tap; retargets on token tap
+   - FLIP animations + reliable "send to end"
+   ========================================================= */
+
 /* ---------- Polyfills ---------- */
 (function(){
   if(!String.prototype.padStart){
@@ -46,10 +55,8 @@ function contrastColor(bgHex){var L=relativeLuminance(hexToRgb(bgHex));return L>
     if(icon)icon.innerHTML=(target==='Light'
       ?'<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       :'<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    toggle.setAttribute('aria-pressed',mode==='dark'?'true':'false');
     var themeMeta=document.querySelector('meta[name="theme-color"]');
     if(themeMeta) themeMeta.setAttribute('content',cssVar('--surface')||'#0f1115');
-    // re-tint rows
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row),drop=$('.tier-drop',row);
       if(chip&&drop&&drop.dataset.manual!=='true'){drop.style.background=tintFrom(chip.dataset.color||'#8b7dff');}
@@ -60,13 +67,11 @@ function contrastColor(bgHex){var L=relativeLuminance(hexToRgb(bgHex));return L>
 /* ---------- DOM ---------- */
 var board=null,tray=null;
 
-/* ---------- FLIP helpers ---------- */
+/* ---------- FLIP ---------- */
 function flipZones(zones, mutate){
   var prev=new Map();
   zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
-
-  mutate(); // do the DOM move
-
+  mutate();
   requestAnimationFrame(function(){
     zones.forEach(function(z){
       $$('.token',z).forEach(function(t){
@@ -75,7 +80,6 @@ function flipZones(zones, mutate){
         if(dx||dy){
           t.classList.add('flip-anim');
           t.style.transform='translate('+dx+'px,'+dy+'px)';
-          // next frame: animate to 0
           requestAnimationFrame(function(){
             t.style.transform='translate(0,0)';
             setTimeout(function(){ t.classList.remove('flip-anim'); t.style.transform=''; }, 220);
@@ -93,11 +97,11 @@ function buildRowDom(){
 
   var chip=document.createElement('div');chip.className='label-chip';chip.setAttribute('contenteditable','true');chip.setAttribute('spellcheck','false');
 
-  // delete button (replaces menu)
+  // delete X
   var del=document.createElement('button');del.className='row-del';del.type='button';
   del.innerHTML='<svg viewBox="0 0 24 24"><path d="M18.3 5.7L12 12l-6.3-6.3-1.4 1.4L10.6 13.4l-6.3 6.3 1.4 1.4L12 14.4l6.3 6.3 1.4-1.4-6.3-6.3 6.3-6.3z"/></svg>';
-  chip.appendChild(del);
 
+  chip.appendChild(del);
   labelWrap.appendChild(chip);
 
   var drop=document.createElement('div');drop.className='tier-drop dropzone';drop.setAttribute('tabindex','0');
@@ -136,11 +140,8 @@ function createRow(cfg){
   on(chip,'keydown',function(e){if(e.key==='Enter'){e.preventDefault();chip.blur();}});
 
   on(del,'click',function(){
-    // return tokens to tray, then remove row
     var tokens=$$('.token',drop);
-    flipZones([drop,tray], function(){
-      tokens.forEach(function(t){ tray.appendChild(t); });
-    });
+    flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions();
   });
 
@@ -164,29 +165,30 @@ var communityCast=[
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
 
+/* Curated unique palette (32 distinct) — mix of dark & light so some labels are black */
 var palette=[
-  '#f97316','#ef4444','#22c55e','#3b82f6','#a78bfa','#06b6d4','#eab308','#10b981',
-  '#f43f5e','#8b5cf6','#0ea5e9','#84cc16','#fb923c','#f472b6','#14b8a6','#60a5fa',
-  '#f59e0b','#34d399','#7dd3fc','#c084fc','#fca5a5','#86efac','#fde047','#93c5fd'
+  '#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6',
+  '#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a78bfa','#ec4899','#f472b6',
+  '#fca5a5','#fde68a','#fbcfe8','#bae6fd','#bbf7d0','#fef08a','#c4b5fd','#93c5fd',
+  '#7dd3fc','#86efac','#fda4af','#d9f99d','#fecdd3','#a7f3d0','#fef3c7','#c7d2fe'
 ];
-var pIndex=Math.floor(Math.random()*palette.length);
+var pIndex=0;
 function nextColor(){var c=palette[pIndex%palette.length];pIndex++;return c;}
 
-/* ---------- Tokens & text fitting ---------- */
-function fitLabelSize(label, container){
-  // Base -> shrink until fits; min 11px; allow wrap only after 13px
-  var base=18, min=11;
+/* ---------- Fit label per token ---------- */
+function fitLabelSize(label, container, base, min){
+  base=base||18; min=min||11;
   label.style.fontSize=base+'px';
   label.style.whiteSpace='nowrap';
   var tries=0;
-  while(tries<12 && (label.scrollWidth>container.clientWidth-10 || label.scrollHeight>container.clientHeight-10)){
-    base-=1; if(base<=13){ label.style.whiteSpace='pre-wrap'; } // allow wrap for very long
+  while(tries<16 && (label.scrollWidth>container.clientWidth-10 || label.scrollHeight>container.clientHeight-10)){
+    base-=1; if(base<=13){ label.style.whiteSpace='pre-wrap'; }
     if(base<min){ base=min; break; }
-    label.style.fontSize=base+'px';
-    tries++;
+    label.style.fontSize=base+'px'; tries++;
   }
 }
 
+/* ---------- Tokens ---------- */
 function buildTokenBase(){
   var el=document.createElement('div');el.className='token';el.id=uid();el.setAttribute('tabindex','0');el.setAttribute('role','listitem');
   el.style.touchAction='none';el.setAttribute('draggable','false');
@@ -216,8 +218,7 @@ function buildTokenBase(){
 function buildNameToken(name,color){
   var el=buildTokenBase();el.style.background=color;
   var label=document.createElement('div');label.className='label';label.textContent=name;label.style.color=contrastColor(color);
-  el.appendChild(label);
-  fitLabelSize(label, el);
+  el.appendChild(label); fitLabelSize(label, el);
   return el;
 }
 function buildImageToken(src,alt){
@@ -240,20 +241,15 @@ function performMove(itemId,parentId,beforeId){
   });
 }
 
-/* ---------- Insert helper (allows "append to end") ---------- */
+/* ---------- Insert helper (allows append) ---------- */
 function insertBeforeForPoint(zone,x,y,except){
   var tokens=[].slice.call(zone.querySelectorAll('.token')).filter(function(t){return t!==except;});
   if(tokens.length===0) return null;
   var centers=tokens.map(function(t){var r=t.getBoundingClientRect();return {t:t,cx:r.left+r.width/2,cy:r.top+r.height/2};});
   var rightMost=centers.reduce(function(a,b){return (b.cx>a.cx)?b:a;});
   var zr=zone.getBoundingClientRect();
-
-  // If pointer is clearly to the right of the right-most token, append.
-  if(x > rightMost.cx + 24) return null;
-  // If pointer is near the bottom edge (after last row), append.
-  if(y > zr.bottom - 12) return null;
-
-  // Otherwise nearest center
+  if(x > rightMost.cx + 24) return null;  // append on far right
+  if(y > zr.bottom - 12) return null;     // append near bottom
   var best=null,bestD=Infinity;
   centers.forEach(function(c){var dx=c.cx-x,dy=c.cy-y;var d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=c.t;}});
   return best;
@@ -263,14 +259,12 @@ function insertBeforeForPoint(zone,x,y,except){
 function enableClickToPlace(zone){
   ensureId(zone,'zone');
   on(zone,'click',function(e){
-    var radial=$('#radialPicker'); if(radial && !radial.classList.contains('hidden')) return;
+    var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
     var selected=$('.token.selected'); if(!selected) return;
     if(isSmall() && !selected.closest('#tray')) return;
     var fromId=ensureId(selected.parentElement,'zone'); if(fromId===zone.id) return;
     var origin=selected.parentElement;
-    flipZones([origin, zone], function(){
-      zone.appendChild(selected);
-    });
+    flipZones([origin, zone], function(){ zone.appendChild(selected); });
     selected.classList.remove('selected');
     recordPlacement(selected.id,fromId,zone.id,'');
     var r=zone.closest?zone.closest('.tier-row'):null;
@@ -278,7 +272,7 @@ function enableClickToPlace(zone){
   });
 }
 
-/* ---------- Drop zone detection ---------- */
+/* ---------- Zone detection ---------- */
 function getDropZoneFromElement(el){
   if(!el) return null;
   var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
@@ -377,13 +371,13 @@ function enableMouseTouchDragFallback(node){
   function loop(){raf=requestAnimationFrame(loop);ghost.style.transform='translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';var el=document.elementFromPoint(x,y);var zone=getDropZoneFromElement(el);if(currentZone&&currentZone!==zone)currentZone.classList.remove('drag-over');if(zone&&zone!==currentZone)zone.classList.add('drag-over');currentZone=zone||null;}
 }
 
-/* ---------- Mobile touch drag (when already in a row) ---------- */
+/* ---------- Mobile touch drag (placed tokens) ---------- */
 function enableMobileTouchDrag(node){
   if(!('PointerEvent' in window)) return;
   on(node,'pointerdown',function(e){
     if(!isSmall()) return;
     if(e.pointerType!=='touch' && e.pointerType!=='pen') return;
-    if(!node.closest('.tier-drop')) return; // only when placed
+    if(!node.closest('.tier-drop')) return;
     e.preventDefault();
     node.setPointerCapture(e.pointerId);
     document.body.classList.add('dragging-item');
@@ -457,9 +451,8 @@ function enableRowReorder(labelArea,row){
   }
 }
 
-/* ---------- Radial (uniform & retargeting) ---------- */
+/* ---------- Radial (uniform & dismiss/retarget) ---------- */
 var radial=$('#radialPicker'),
-    radialBackdrop=radial?$('.radial-backdrop',radial):null,
     radialOpts=radial?$('.radial-options',radial):null,
     radialHighlight=radial?$('.radial-highlight',radial):null,
     radialCloseBtn=radial?$('.radial-close',radial):null;
@@ -499,6 +492,33 @@ function openRadial(token){
     })(j);
   }
 
+  // Close when tapping anywhere not on an option/close or when retargeting to another token
+  function backdropHandler(ev){
+    if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
+
+    // retarget to another tray token
+    var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
+    var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
+    var prevPE = radial.style.pointerEvents;
+    radial.style.pointerEvents = 'none';
+    var under = document.elementFromPoint(x,y);
+    radial.style.pointerEvents = prevPE || 'auto';
+    var otherToken = under && under.closest && under.closest('#tray .token');
+    if(otherToken){
+      closeRadial();
+      $$('.token.selected').forEach(function(t){t.classList.remove('selected');});
+      otherToken.classList.add('selected');
+      openRadial(otherToken);
+      ev.preventDefault();
+      return;
+    }
+
+    // Otherwise: simple outside tap → close
+    closeRadial();
+  }
+  radial.addEventListener('pointerdown', backdropHandler, {passive:false});
+  radial._backdropHandler = backdropHandler; // store to remove later
+
   radial.setAttribute('aria-hidden','false'); radial.classList.remove('hidden'); radial.classList.add('visible','show');
   setTimeout(function(){radial.classList.remove('show');},180+N*16);
   if(_radialGeo.length){ updateHighlight(0); }
@@ -508,63 +528,9 @@ function updateHighlight(index){
   for(var i=0;i<_radialGeo.length;i++){var b=_radialGeo[i].btn; if(b) b.classList.toggle('is-hot', i===index);}
   if(radialHighlight){ radialHighlight.hidden=true; radialHighlight.dataset.index=String(index); }
 }
-
-/* Backdrop behavior:
-   - If you tap another tray token under the overlay, retarget the picker there.
-   - Otherwise, dragging on the backdrop lets you scrub across options. */
-function backdropDown(ev){
-  if(!radial || radial.classList.contains('hidden')) return;
-
-  var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
-  var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
-
-  // Try to retarget to another tray token
-  var prevPE = radial.style.pointerEvents;
-  radial.style.pointerEvents = 'none';
-  var under = document.elementFromPoint(x,y);
-  radial.style.pointerEvents = prevPE || 'auto';
-  var otherToken = under && under.closest && under.closest('#tray .token');
-  if(otherToken){
-    closeRadial();
-    $$('.token.selected').forEach(function(t){t.classList.remove('selected');});
-    otherToken.classList.add('selected');
-    openRadial(otherToken);
-    ev.preventDefault();
-    return;
-  }
-
-  // Scrub-to-select
-  _radialTrackStart(ev);
-}
-if(radialBackdrop){
-  on(radialBackdrop,'pointerdown',backdropDown,_supportsPassive?{passive:false}:false);
-  on(radialBackdrop,'touchstart',backdropDown,_supportsPassive?{passive:false}:false);
-}
 if(radialCloseBtn){
   on(radialCloseBtn,'pointerdown',function(e){radialCancelRequested=true;e.stopPropagation();},false);
   on(radialCloseBtn,'click',function(e){e.stopPropagation();closeRadial();},false);
-}
-
-function _radialTrackStart(e){
-  var tracking=true;
-  function update(ev){
-    if(!tracking||radialCancelRequested) return;
-    var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
-    var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
-    var bestIndex=0,bestD=Infinity;
-    for(var k=0;k<_radialGeo.length;k++){var g=_radialGeo[k],dx=g.x-x,dy=g.y-y,d=dx*dx+dy*dy;if(d<bestD){bestD=d;bestIndex=k;}}
-    updateHighlight(bestIndex);
-  }
-  function end(){
-    if(radialCancelRequested){cleanup();return;}
-    var idx=parseInt(radialHighlight && radialHighlight.dataset.index || '0',10); var target=_radialGeo[idx];
-    if(target){selectRadialTarget(target.row);} cleanup();
-  }
-  function cleanup(){tracking=false;document.removeEventListener('pointermove',update);document.removeEventListener('pointerup',end);document.removeEventListener('touchmove',update);document.removeEventListener('touchend',end);}
-  document.addEventListener('pointermove',update,_supportsPassive?{passive:true}:false);
-  document.addEventListener('pointerup',end,false);
-  document.addEventListener('touchmove',update,_supportsPassive?{passive:true}:false);
-  document.addEventListener('touchend',end,false);
 }
 
 function selectRadialTarget(row){
@@ -573,24 +539,23 @@ function selectRadialTarget(row){
   var fromId=ensureId(radialForToken.parentElement,'zone');
   var origin=radialForToken.parentElement;
   ensureId(zone,'zone');
-  flipZones([origin, zone], function(){
-    zone.appendChild(radialForToken);
-  });
+  flipZones([origin, zone], function(){ zone.appendChild(radialForToken); });
   radialForToken.classList.remove('selected');
   recordPlacement(radialForToken.id,fromId,zone.id,'');
   vib(7); closeRadial();
 }
-function closeRadial(){if(!radial)return; radial.classList.add('hidden'); radial.classList.remove('visible','show'); radial.setAttribute('aria-hidden','true'); radialForToken=null; radialCancelRequested=false; _radialGeo=[];}
+function closeRadial(){
+  if(!radial) return;
+  if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
+  radial.classList.add('hidden'); radial.classList.remove('visible','show'); radial.setAttribute('aria-hidden','true');
+  radialForToken=null; radialCancelRequested=false; _radialGeo=[];
+}
 on(window,'resize',refreshRadialOptions);
 
 /* ---------- Clear / Undo / Save ---------- */
 on($('#trashClear'),'click',function(){
   if(!confirm('Clear the entire tier board? This moves all placed items back to Image Storage.'))return;
-  var zones=$$('.tier-drop'); zones.push(tray);
-  zones.forEach(function(z){
-    var toks=$$('.token',z);
-    flipZones([z,tray], function(){ toks.forEach(function(t){ tray.appendChild(t); }); });
-  });
+  $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
 });
 on($('#undoBtn'),'click',function(){
   var last=historyStack.pop(); if(!last)return;
@@ -599,9 +564,25 @@ on($('#undoBtn'),'click',function(){
 });
 on($('#saveBtn'),'click',function(){
   closeRadial();
+
   var panel=$('#boardPanel'); var cloneWrap=document.createElement('div');
   cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
   var clone=panel.cloneNode(true);
+
+  // bump label text size only in export + refit
+  $$('.token .label', clone).forEach(function(lbl){
+    var container=lbl.parentElement;
+    lbl.style.fontSize='22px';
+    lbl.style.whiteSpace='nowrap';
+    // simple fit down if needed
+    var base=22,min=12,tries=0;
+    while(tries<16 && (lbl.scrollWidth>container.clientWidth-10 || lbl.scrollHeight>container.clientHeight-10)){
+      base-=1; if(base<=13){ lbl.style.whiteSpace='pre-wrap'; }
+      if(base<min){ base=min; break; }
+      lbl.style.fontSize=base+'px'; tries++;
+    }
+  });
+
   var title=clone.querySelector('.board-title');
   if(title && title.textContent.replace(/\s+/g,'').length===0){
     title.parentNode.removeChild(title);
@@ -609,9 +590,12 @@ on($('#saveBtn'),'click',function(){
   }
   clone.style.width='1200px'; clone.style.maxWidth='1200px';
   cloneWrap.appendChild(clone); document.body.appendChild(cloneWrap);
-  html2canvas(clone,{backgroundColor:cssVar('--surface')||null,useCORS:true,scale:2,width:1200,windowWidth:1200}).then(function(canvas){
-    var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png'; document.body.appendChild(a); a.click(); a.remove(); cloneWrap.remove();
-  }).catch(function(){cloneWrap.remove();});
+
+  html2canvas(clone,{backgroundColor:cssVar('--surface')||null,useCORS:true,scale:2,width:1200,windowWidth:1200})
+    .then(function(canvas){
+      var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png'; document.body.appendChild(a); a.click(); a.remove();
+      cloneWrap.remove();
+    }).catch(function(){ cloneWrap.remove(); });
 });
 
 /* ---------- Keyboard quick jump ---------- */
@@ -633,18 +617,15 @@ document.addEventListener('DOMContentLoaded',function start(){
 
   defaultTiers.forEach(function(t){board.appendChild(createRow(t));});
 
-  // tray defaults
   var nameColor=$('#nameColor'), nameInput=$('#nameInput');
   if(nameColor) nameColor.value=palette[0];
-  communityCast.forEach(function(n,i){tray.appendChild(buildNameToken(n,palette[i%palette.length]));});
+  communityCast.forEach(function(n,i){ tray.appendChild(buildNameToken(n,palette[i%palette.length])); });
 
-  // add tier
   on($('#addTierBtn'),'click',function(){
     board.appendChild(createRow({label:'NEW',color:nextColor()}));
     refreshRadialOptions();
   });
 
-  // creators
   on($('#addNameBtn'),'click',function(){
     if(!nameInput||!nameColor) return;
     var name=nameInput.value.trim(); if(!name) return;
@@ -661,7 +642,7 @@ document.addEventListener('DOMContentLoaded',function start(){
     });
   });
 
-  // Help text (includes row delete info)
+  // Help text
   var help=$('#helpText');
   if(help){
     help.textContent = (isSmall()
@@ -671,6 +652,5 @@ document.addEventListener('DOMContentLoaded',function start(){
   }
 
   enableClickToPlace(tray);
-
   live('Ready.');
 });
