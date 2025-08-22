@@ -10,7 +10,7 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- Brand rail -->
+    <!-- Brand -->
     <header class="header">
       <div class="brand">FSTM</div>
     </header>
@@ -25,7 +25,7 @@
         <input id="nameColor" class="color-dot" type="color" title="Circle color" />
         <button id="addNameBtn" class="btn" type="button">
           <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
           </span>
           <span>Add</span>
         </button>
@@ -37,8 +37,7 @@
       </div>
 
       <p class="help">
-        Desktop: drag &amp; drop or click a circle then click a row.<br />
-        Mobile: tap a circle to open the curved picker.
+        Desktop/iPad: drag &amp; drop. Phone: tap a circle to place with the curved picker.
       </p>
     </section>
 
@@ -48,21 +47,21 @@
       <div class="controls">
         <button id="addTierBtn" class="btn btn-success" type="button">
           <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M3 7h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
           </span>
           <span>Add Tier</span>
         </button>
 
         <button id="undoBtn" class="btn" type="button" disabled>
           <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 01-10 10H6v-2h6a8 8 0 000-16z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 01-10 10H6v-2h6a8 8 0 000-16z"/></svg>
           </span>
           <span>Undo</span>
         </button>
 
         <button id="trashClear" class="btn btn-danger" type="button">
           <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/></svg>
           </span>
           <span>Clear Board</span>
         </button>
@@ -74,7 +73,7 @@
 
         <button id="saveBtn" class="btn btn-accent" type="button">
           <span class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l5 5h-3v6h-4V8H7l5-5zm-7 14h14v2H5v-2z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6h-4V8H7l5-5zm-7 14h14v2H5v-2z"/></svg>
           </span>
           <span>Save PNG</span>
         </button>
@@ -83,12 +82,11 @@
 
     <!-- Tier board -->
     <section class="panel" id="boardPanel" aria-labelledby="boardTitle">
-      <!-- Editable title; if left empty, it will be omitted from the PNG -->
       <h2 id="boardTitle" class="board-title" contenteditable="true" aria-label="Tier title" spellcheck="false"></h2>
       <div id="tierBoard" aria-label="Tier board"></div>
     </section>
 
-    <!-- Image storage (was Items Tray) -->
+    <!-- Image storage -->
     <section class="panel" aria-labelledby="storageTitle">
       <h2 id="storageTitle" class="board-title">Image Storage</h2>
       <div id="tray" class="dropzone" role="list" aria-label="Image Storage"></div>
@@ -100,15 +98,14 @@
       <div class="radial-options"></div>
       <div class="radial-highlight" hidden></div>
       <button class="radial-close" type="button" aria-label="Close">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18.3 5.71L12 12.01l-6.29-6.3-1.41 1.42L10.59 13.4l-6.3 6.3 1.42 1.41 6.29-6.29 6.29 6.29 1.41-1.41-6.3-6.3 6.3-6.29-1.41-1.42z"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12.01l-6.29-6.3-1.41 1.42L10.59 13.4l-6.3 6.3 1.42 1.41 6.29-6.29 6.29 6.29 1.41-1.41-6.3-6.3 6.3-6.29-1.41-1.42z"/></svg>
       </button>
     </div>
 
-    <!-- A11y live-region for placement announcements -->
+    <!-- A11y live region -->
     <div id="live" class="sr" aria-live="polite"></div>
   </div>
 
-  <!-- libs + app -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="script.js"></script>
 </body>
