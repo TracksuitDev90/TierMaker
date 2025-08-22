@@ -15,9 +15,9 @@
       <div class="brand">FSTM</div>
     </header>
 
-    <!-- Create Items -->
+    <!-- Create custom items -->
     <section class="panel creator-grid" aria-labelledby="createTitle">
-      <h2 id="createTitle" class="section-title">Create Items</h2>
+      <h2 id="createTitle" class="section-title">create custom images</h2>
 
       <div class="creator-line">
         <label class="sr" for="nameInput">Name circle</label>
@@ -37,7 +37,8 @@
       </div>
 
       <p class="help">
-        Desktop/iPad: drag &amp; drop. Phone: tap a circle to place with the curved picker.
+        <strong>Help</strong><br />
+        <span id="helpText">Desktop/iPad: drag circles into rows. Phone: tap a circle to choose a row; once placed, drag to reorder or drag back to Image Storage.</span>
       </p>
     </section>
 
@@ -82,7 +83,12 @@
 
     <!-- Tier board -->
     <section class="panel" id="boardPanel" aria-labelledby="boardTitle">
-      <h2 id="boardTitle" class="board-title" contenteditable="true" aria-label="Tier title" spellcheck="false"></h2>
+      <div class="board-title-wrap">
+        <span class="title-pen" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm18.37-11.2a1 1 0 000-1.41l-1.96-1.96a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.45-1.21z"/></svg>
+        </span>
+        <h2 id="boardTitle" class="board-title" contenteditable="true" aria-label="Tier title" spellcheck="false"></h2>
+      </div>
       <div id="tierBoard" aria-label="Tier board"></div>
     </section>
 
@@ -102,7 +108,6 @@
       </button>
     </div>
 
-    <!-- A11y live region -->
     <div id="live" class="sr" aria-live="polite"></div>
   </div>
 
