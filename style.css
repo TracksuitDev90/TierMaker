@@ -58,10 +58,10 @@ a{color:inherit;text-decoration:none}
 .btn .ico svg{width:22px;height:22px;fill:currentColor}
 
 /* Unique tool-button colors */
-#addTierBtn{background:#22c55e;color:#0a1b12;border-color:rgba(0,0,0,.12)}
-#undoBtn{background:#f59e0b;color:#1a1200;border-color:rgba(0,0,0,.12)}
-#trashClear{background:#e66868;color:#fff;border-color:rgba(255,255,255,.18)}
-#saveBtn{background:#556ee6;color:#fff;border-color:rgba(255,255,255,.15)}
+#addTierBtn{background:#8FC741;color:#111111;border-color:rgba(0,0,0,.12)}
+#undoBtn{background:#FF6A13;color:#111111;border-color:rgba(0,0,0,.12)}
+#trashClear{background:#FD0015;color:#111111;border-color:rgba(255,255,255,.18)}
+#saveBtn{background:#4E88AE;color:#111111;border-color:rgba(255,255,255,.15)}
 
 .btn.small{height:42px;padding:0 12px;border-radius:12px;font-weight:700}
 
