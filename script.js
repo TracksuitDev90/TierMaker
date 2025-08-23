@@ -159,20 +159,31 @@ var communityCast=[
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
 
-/* Palette inspired by your reference; ensure black text readability */
-var screenshotPalette=[
-  '#FCE38A','#F5CD7A','#556EE6','#E66868','#C34468',
-  '#574B90','#F78FB3','#3EC1D3','#303A52','#E26042',
-  '#F7D794','#778BEB','#EB8688','#CF6A87','#786FA6',
-  '#F8A5C2','#64CDDB','#596174','#E77F67'
+/* ---------- PRE-RENDERED CIRCLE PALETTE (bright, readable, no repeats) ---------- */
+/* Use these base shades (inspired by your refs). We auto-lighten if needed so black text works. */
+var BASE_PALETTE = [
+  '#FCE38A', '#F3A683', '#F5CD7A', '#F7D794', // warm yellows/oranges
+  '#778BEB', '#EB8688', '#CF6A87', '#786FA6', // periwinkle / pinks / lavender
+  '#F8A5C2', '#64CDDB', '#3EC1D3', '#E77F67', // pink/cyans/coral
+  '#FA991C', '#FAD4C9', '#7FC4D4', '#A7B3E9', // orange / soft tints / teal / lilac
+  '#FBD78B', '#EFA7A7', '#9FD8DF', '#C8B6FF', // soft yellow / rose / sky / pale violet
+  '#B8E1FF', '#FFD6A5', '#C3F0CA', '#FFE5EC'  // light blue / apricot / mint / blush
 ];
+
+/* ensure black text has strong contrast; gently lighten darker hues */
 function ensureForBlack(hex){
-  var out=hex, L=relativeLuminance(hexToRgb(out)), step=0;
-  while(L<0.68 && step<6){ out=lighten(out,0.15); L=relativeLuminance(hexToRgb(out)); step++; }
+  var out = hex, L = relativeLuminance(hexToRgb(out)), step = 0;
+  while (L < 0.70 && step < 8) {           // nudge until comfortably light
+    out = lighten(out, 0.12);
+    L = relativeLuminance(hexToRgb(out));
+    step++;
+  }
   return out;
 }
-var presetPalette=screenshotPalette.map(ensureForBlack);
-var pIndex=0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
+
+var presetPalette = BASE_PALETTE.map(ensureForBlack);
+var pIndex = 0;
+function nextPreset(){ var c = presetPalette[pIndex % presetPalette.length]; pIndex++; return c; }
 
 /* ---------- Fit label per token ---------- */
 function fitLabelSize(label, container, base, min){
