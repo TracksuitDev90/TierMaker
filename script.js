@@ -678,70 +678,75 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ===== Export-only label fitter (bigger text, same circle size) ===== */
+/* ===== Export-only label fitter (LARGE single-line text, same circle) ===== */
 function fitExportLabel(lbl){
-  var token = lbl.parentElement;
-  var D = token.clientWidth;          // live circle diameter (unchanged in export)
-  var border = 4;                     // your .token border width in CSS
-  var pad = 4;                        // inner breathing room for text
-  var effD = D - border * 2;          // usable interior diameter
+  const token = lbl.parentElement;
+  const D = token.getBoundingClientRect().width; // actual circle diameter in export
+  const pad = 6;                                  // ↓ tighter padding = more width
 
-  // hard reset so UI styles don't interfere with export sizing
+  // reset UI text rules so nothing forces smaller sizes
+  const name = (lbl.textContent || '').trim();
   lbl.style.whiteSpace = 'nowrap';
   lbl.style.wordBreak  = 'normal';
   lbl.style.hyphens    = 'none';
   lbl.style.textTransform = 'none';
-  lbl.style.letterSpacing = '0';
   lbl.style.lineHeight = '1';
   lbl.style.display    = 'flex';
   lbl.style.alignItems = 'center';
   lbl.style.justifyContent = 'center';
   lbl.style.height     = '100%';
   lbl.style.padding    = '0 ' + pad + 'px';
+  lbl.style.letterSpacing = '';
 
-  // search a wide range, but keep it inside the circle
-  // (bounds are % of the circle diameter; adjust if you want)
-  var minPx = Math.floor(effD * 0.26);
-  var maxPx = Math.floor(effD * 0.66);
-  var best  = minPx;
+  // very gentle squeeze for long names (keeps single line, looks natural)
+  if (name.length >= 9)  lbl.style.letterSpacing = '-0.015em';
+  if (name.length >= 12) lbl.style.letterSpacing = '-0.030em';
 
-  function fits(px){
-    lbl.style.fontSize = px + 'px';
-    var wOK = lbl.scrollWidth  <= (effD - pad * 2 + 0.5); // +0.5 for subpixel rounding
-    var hOK = lbl.scrollHeight <= (effD - pad * 2 + 0.5);
-    return wOK && hOK;
+  // force font-size with !important so base CSS can't override
+  const setFont = px => lbl.style.setProperty('font-size', px + 'px', 'important');
+
+  // Wider search window (30%–85% of diameter), aggressive guess first
+  let lo = Math.floor(D * 0.30);
+  let hi = Math.floor(D * 0.85);
+  let best = lo;
+
+  const fits = (px) => {
+    setFont(px);
+    return lbl.scrollWidth <= (D - pad * 2 + 0.5); // +0.5 guards subpixel rounding
+  };
+
+  const guess = Math.floor(D * 0.62);
+  if (fits(guess)) { best = guess; lo = guess; } else { hi = guess; }
+
+  while (lo <= hi){
+    const mid = (lo + hi) >> 1;
+    if (fits(mid)) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
-
-  // quick first guess, then binary search refine
-  var guess = Math.floor(effD * 0.5);
-  if (fits(guess)) { best = guess; minPx = guess; } else { maxPx = guess; }
-  while (minPx <= maxPx){
-    var mid = (minPx + maxPx) >> 1;
-    if (fits(mid)){ best = mid; minPx = mid + 1; }
-    else { maxPx = mid - 1; }
-  }
-  lbl.style.fontSize = best + 'px';
+  setFont(best);
 }
 
-/* ===== Save PNG (no circle resize; just bigger auto-fit labels) ===== */
+/* ===== Save PNG (no circle resize; only bigger labels) ===== */
 on($('#saveBtn'),'click', function(){
   // clean transient UI
-  $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
-  $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
+  if (typeof closeRadial === 'function') closeRadial();
+  $$('.token.selected').forEach(t => t.classList.remove('selected'));
+  $$('.dropzone.drag-over').forEach(z => z.classList.remove('drag-over'));
 
-  var panel = $('#boardPanel');
-  var cloneWrap = document.createElement('div');
-  cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
+  const panel = $('#boardPanel');
+  const cloneWrap = document.createElement('div');
+  cloneWrap.style.position = 'fixed';
+  cloneWrap.style.left = '-99999px';
+  cloneWrap.style.top  = '0';
 
-  var clone = panel.cloneNode(true);
+  const clone = panel.cloneNode(true);
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  // Export-only CSS: keep circle size; just normalize label styles + hide row X
-  var style = document.createElement('style');
+  // Export-only CSS: keep circle size, normalize labels, hide row X
+  const style = document.createElement('style');
   style.textContent = `
-    .row-del{ display:none !important; }               /* do not show delete X in PNG */
-    .token{ box-shadow:none !important; }              /* cleaner export; size unchanged */
+    .row-del{ display:none !important; }             /* don't show delete X in PNG */
+    .token{ box-shadow:none !important; }            /* cleaner export; size unchanged */
     .token .label{
       font-weight:900 !important;
       text-shadow:none !important;
@@ -749,19 +754,19 @@ on($('#saveBtn'),'click', function(){
       word-break:normal !important; hyphens:none !important;
       white-space:nowrap !important; line-height:1 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
-      padding:0 8px !important;
+      padding:0 6px !important;                       /* match fitter's tighter padding */
     }
   `;
   clone.appendChild(style);
 
-  // Omit empty title
-  var title = clone.querySelector('.board-title');
+  // Remove empty title from export
+  const title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'') === '') {
-    var wrap = title.parentElement;
+    const wrap = title.parentElement;
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
-  // Now size each label as large as possible INSIDE the live-size circle
+  // Maximize label size inside existing circles
   $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
@@ -770,14 +775,16 @@ on($('#saveBtn'),'click', function(){
   html2canvas(clone, {
     backgroundColor: cssVar('--surface') || null,
     useCORS: true,
-    scale: 2,
+    scale: 3,
     width: 1200,
     windowWidth: 1200
-  }).then(function(canvas){
-    var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
+  }).then(canvas => {
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'tier-list.png';
     document.body.appendChild(a); a.click(); a.remove();
     cloneWrap.remove();
-  }).catch(function(){ cloneWrap.remove(); });
+  }).catch(() => { cloneWrap.remove(); });
 });
 
 /* ---------- Keyboard quick-jump (1..N) ---------- */
