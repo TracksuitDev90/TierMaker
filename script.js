@@ -683,7 +683,7 @@ function fitExportLabel(lbl){
   var token = lbl.parentElement;
   var D = token.clientWidth;          // live circle diameter (unchanged in export)
   var border = 4;                     // your .token border width in CSS
-  var pad = 8;                        // inner breathing room for text
+  var pad = 4;                        // inner breathing room for text
   var effD = D - border * 2;          // usable interior diameter
 
   // hard reset so UI styles don't interfere with export sizing
