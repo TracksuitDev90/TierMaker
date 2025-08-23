@@ -678,164 +678,106 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ========= Export label sizing (robust, centered, single line) ========= */
+/* ===== Export-only label fitter (bigger text, same circle size) ===== */
 function fitExportLabel(lbl){
-  const token = lbl.parentElement;
+  var token = lbl.parentElement;
+  var D = token.clientWidth;          // live circle diameter (unchanged in export)
+  var border = 4;                     // your .token border width in CSS
+  var pad = 8;                        // inner breathing room for text
+  var effD = D - border * 2;          // usable interior diameter
 
-  // Real circle diameter (clone is already attached)
-  const D = token.getBoundingClientRect().width || token.offsetWidth || 0;
-  if (!D) return;
+  // hard reset so UI styles don't interfere with export sizing
+  lbl.style.whiteSpace = 'nowrap';
+  lbl.style.wordBreak  = 'normal';
+  lbl.style.hyphens    = 'none';
+  lbl.style.textTransform = 'none';
+  lbl.style.letterSpacing = '0';
+  lbl.style.lineHeight = '1';
+  lbl.style.display    = 'flex';
+  lbl.style.alignItems = 'center';
+  lbl.style.justifyContent = 'center';
+  lbl.style.height     = '100%';
+  lbl.style.padding    = '0 ' + pad + 'px';
 
-  // Interior (subtract any token borders)
-  const tcs = getComputedStyle(token);
-  const effD = Math.max(
-    0,
-    D - (parseFloat(tcs.borderLeftWidth) || 0) - (parseFloat(tcs.borderRightWidth) || 0)
-  );
+  // search a wide range, but keep it inside the circle
+  // (bounds are % of the circle diameter; adjust if you want)
+  var minPx = Math.floor(effD * 0.26);
+  var maxPx = Math.floor(effD * 0.66);
+  var best  = minPx;
 
-  const pad = 6;                              // small breathing room
-  const usableW = Math.max(0, effD - pad * 2);
-  const text = (lbl.textContent || '').trim();
-
-  // Normalize the export label area and center it
-  Object.assign(lbl.style, {
-    whiteSpace: 'nowrap',
-    wordBreak: 'normal',
-    hyphens: 'none',
-    textTransform: 'none',
-    lineHeight: '1',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    width: '100%',
-    textAlign: 'center',
-    padding: '0 ' + pad + 'px',
-    boxSizing: 'border-box',
-  });
-
-  // Gentle squeeze for longer names (keeps single line, still looks natural)
-  let track = '0';
-  if (text.length >= 9)  track = '-0.015em';
-  if (text.length >= 12) track = '-0.030em';
-  lbl.style.setProperty('letter-spacing', track, 'important');
-
-  // ---- Probe at a known size, then scale by width & height caps ----
-  const lcs = getComputedStyle(lbl);
-  const probe = document.createElement('span');
-  probe.textContent = text || 'A';
-  Object.assign(probe.style, {
-    position: 'absolute',
-    left: '-99999px',
-    top: '0',
-    whiteSpace: 'nowrap',
-    lineHeight: '1',
-    fontFamily: lcs.fontFamily || 'inherit',
-    fontWeight: '900',
-    padding: '0',
-    margin: '0'
-  });
-  probe.style.setProperty('letter-spacing', track, 'important');
-
-  const BASE = 100; // big base eliminates measurement noise
-  probe.style.setProperty('font-size', BASE + 'px', 'important');
-  document.body.appendChild(probe);
-
-  let wBase = probe.getBoundingClientRect().width;
-  if (!wBase || !isFinite(wBase)) wBase = (text.length || 1) * (BASE * 0.55);
-
-  // Width- and height-derived font sizes
-  const sizeFromWidth  = (usableW / wBase) * BASE;
-  const sizeFromHeight = effD - pad * 2;
-
-  // Pick the limiting dimension and keep a tiny safety margin
-  let finalPx = Math.max(12, Math.min(sizeFromWidth, sizeFromHeight)) * 0.985;
-
-  // Verify at the target size, then correct precisely if there’s any overshoot
-  probe.style.setProperty('font-size', finalPx + 'px', 'important');
-  const wTarget = probe.getBoundingClientRect().width;
-  if (wTarget > usableW) {
-    finalPx = Math.floor(finalPx * (usableW / wTarget) * 0.995); // exact scale-down + hair of margin
-    probe.style.setProperty('font-size', finalPx + 'px', 'important');
+  function fits(px){
+    lbl.style.fontSize = px + 'px';
+    var wOK = lbl.scrollWidth  <= (effD - pad * 2 + 0.5); // +0.5 for subpixel rounding
+    var hOK = lbl.scrollHeight <= (effD - pad * 2 + 0.5);
+    return wOK && hOK;
   }
 
-  // Apply to the real label with !important so nothing overrides
-  lbl.style.setProperty('font-size', Math.max(12, Math.floor(finalPx)) + 'px', 'important');
-
-  probe.remove();
+  // quick first guess, then binary search refine
+  var guess = Math.floor(effD * 0.5);
+  if (fits(guess)) { best = guess; minPx = guess; } else { maxPx = guess; }
+  while (minPx <= maxPx){
+    var mid = (minPx + maxPx) >> 1;
+    if (fits(mid)){ best = mid; minPx = mid + 1; }
+    else { maxPx = mid - 1; }
+  }
+  lbl.style.fontSize = best + 'px';
 }
 
-/* Wait for fonts so metrics are stable */
-function waitForFonts(){
-  if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(()=>{});
-  return new Promise(res => setTimeout(res, 60));
-}
+/* ===== Save PNG (no circle resize; just bigger auto-fit labels) ===== */
+on($('#saveBtn'),'click', function(){
+  // clean transient UI
+  $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+  $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
-/* ==================== Save PNG (same circle size; bigger, centered labels) ==================== */
-on($('#saveBtn'),'click', async function(){
-  if (typeof closeRadial === 'function') closeRadial();
-  $$('.token.selected').forEach(t => t.classList.remove('selected'));
-  $$('.dropzone.drag-over').forEach(z => z.classList.remove('drag-over'));
+  var panel = $('#boardPanel');
+  var cloneWrap = document.createElement('div');
+  cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
 
-  const panel = $('#boardPanel');
-
-  // Build export clone and ATTACH before measuring so sizes are real
-  const cloneWrap = document.createElement('div');
-  Object.assign(cloneWrap.style, { position:'fixed', left:'-99999px', top:'0' });
-
-  const clone = panel.cloneNode(true);
+  var clone = panel.cloneNode(true);
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  // Export-only CSS: keep circle size; normalize labels; hide row X
-  const style = document.createElement('style');
+  // Export-only CSS: keep circle size; just normalize label styles + hide row X
+  var style = document.createElement('style');
   style.textContent = `
-    .row-del{ display:none !important; }         /* hide delete X in PNG */
-    .token{ box-shadow:none !important; }        /* cleaner export; size unchanged */
+    .row-del{ display:none !important; }               /* do not show delete X in PNG */
+    .token{ box-shadow:none !important; }              /* cleaner export; size unchanged */
     .token .label{
       font-weight:900 !important;
       text-shadow:none !important;
+      letter-spacing:0 !important;
       word-break:normal !important; hyphens:none !important;
       white-space:nowrap !important; line-height:1 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
-      width:100% !important; text-align:center !important;
-      padding:0 6px !important; box-sizing:border-box !important;
-      /* DO NOT set letter-spacing here; fitter sets it per-label with !important */
+      padding:0 8px !important;
     }
   `;
   clone.appendChild(style);
 
-  // Omit empty board title in export
-  const title = clone.querySelector('.board-title');
+  // Omit empty title
+  var title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'') === '') {
-    const wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    var wrap = title.parentElement;
+    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
+
+  // Now size each label as large as possible INSIDE the live-size circle
+  $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
   document.body.appendChild(cloneWrap);
 
-  // Ensure layout & fonts are ready before fitting
-  void clone.offsetHeight;       // reflow
-  await waitForFonts();
-  await new Promise(r => requestAnimationFrame(r));
-
-  // Upsize each label to max single-line inside EXISTING circles
-  $$('.token .label', clone).forEach(fitExportLabel);
-
-  // Render PNG
   html2canvas(clone, {
     backgroundColor: cssVar('--surface') || null,
     useCORS: true,
-    scale: 2,                 // increase to 3 only for extra sharpness
+    scale: 3,
     width: 1200,
     windowWidth: 1200
-  }).then(canvas => {
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = 'tier-list.png';
+  }).then(function(canvas){
+    var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
     document.body.appendChild(a); a.click(); a.remove();
     cloneWrap.remove();
-  }).catch(() => { cloneWrap.remove(); });
+  }).catch(function(){ cloneWrap.remove(); });
 });
 
 /* ---------- Keyboard quick-jump (1..N) ---------- */
