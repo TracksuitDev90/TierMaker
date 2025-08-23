@@ -678,42 +678,54 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ===== Export-only label fitter (KIKKI style: BIG, uppercase, single line) ===== */
+/* ===== Export-only label fitter (bigger text, same circle size) ===== */
 function fitExportLabel(lbl){
   var token = lbl.parentElement;
-  var D = token.clientWidth;
-  var pad = Math.max(12, Math.floor(D * 0.10)); // 10% inner padding
+  var D = token.clientWidth;          // live circle diameter (unchanged in export)
+  var border = 4;                     // your .token border width in CSS
+  var pad = 8;                        // inner breathing room for text
+  var effD = D - border * 2;          // usable interior diameter
 
-  // KIKKI look
-  lbl.style.textTransform = 'uppercase';
-  lbl.style.fontWeight = '900';
-  lbl.style.letterSpacing = '0.02em';
+  // hard reset so UI styles don't interfere with export sizing
   lbl.style.whiteSpace = 'nowrap';
+  lbl.style.wordBreak  = 'normal';
+  lbl.style.hyphens    = 'none';
+  lbl.style.textTransform = 'none';
+  lbl.style.letterSpacing = '0';
   lbl.style.lineHeight = '1';
-  lbl.style.display = 'flex';
+  lbl.style.display    = 'flex';
   lbl.style.alignItems = 'center';
   lbl.style.justifyContent = 'center';
-  lbl.style.height = '100%';
-  lbl.style.padding = '0 ' + pad + 'px';
+  lbl.style.height     = '100%';
+  lbl.style.padding    = '0 ' + pad + 'px';
 
-  var minPx = Math.max(14, Math.floor(D * 0.22));
-  var maxPx = Math.floor(D * 0.56);
-  var best = minPx;
+  // search a wide range, but keep it inside the circle
+  // (bounds are % of the circle diameter; adjust if you want)
+  var minPx = Math.floor(effD * 0.26);
+  var maxPx = Math.floor(effD * 0.66);
+  var best  = minPx;
 
   function fits(px){
     lbl.style.fontSize = px + 'px';
-    return lbl.scrollWidth <= (D - pad * 2);
+    var wOK = lbl.scrollWidth  <= (effD - pad * 2 + 0.5); // +0.5 for subpixel rounding
+    var hOK = lbl.scrollHeight <= (effD - pad * 2 + 0.5);
+    return wOK && hOK;
   }
+
+  // quick first guess, then binary search refine
+  var guess = Math.floor(effD * 0.5);
+  if (fits(guess)) { best = guess; minPx = guess; } else { maxPx = guess; }
   while (minPx <= maxPx){
     var mid = (minPx + maxPx) >> 1;
-    if (fits(mid)) { best = mid; minPx = mid + 1; }
+    if (fits(mid)){ best = mid; minPx = mid + 1; }
     else { maxPx = mid - 1; }
   }
   lbl.style.fontSize = best + 'px';
 }
 
-/* ===== Save PNG (bigger circles + KIKKI labels; hides row X; keeps title if present) ===== */
+/* ===== Save PNG (no circle resize; just bigger auto-fit labels) ===== */
 on($('#saveBtn'),'click', function(){
+  // clean transient UI
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
@@ -725,31 +737,19 @@ on($('#saveBtn'),'click', function(){
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  var EXPORT_TOKEN = 168; // bigger circles in PNG
-  var EXPORT_GAP   = 20;
-
+  // Export-only CSS: keep circle size; just normalize label styles + hide row X
   var style = document.createElement('style');
   style.textContent = `
-    .tier-drop{
-      grid-template-columns: repeat(auto-fill, minmax(${EXPORT_TOKEN + 6}px, 1fr)) !important;
-      gap: ${EXPORT_GAP}px !important;
-    }
-    .token{
-      width:${EXPORT_TOKEN}px !important;
-      height:${EXPORT_TOKEN}px !important;
-      border-radius:999px !important;
-      border-width:4px !important;
-      box-shadow:none !important;
-    }
-    .token img{ width:100% !important; height:100% !important; object-fit:cover !important; }
-    .row-del{ display:none !important; } /* don’t show the row delete X in the PNG */
+    .row-del{ display:none !important; }               /* do not show delete X in PNG */
+    .token{ box-shadow:none !important; }              /* cleaner export; size unchanged */
     .token .label{
       font-weight:900 !important;
-      text-transform:uppercase !important;
-      letter-spacing:0.02em !important;
+      text-shadow:none !important;
+      letter-spacing:0 !important;
+      word-break:normal !important; hyphens:none !important;
+      white-space:nowrap !important; line-height:1 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
-      line-height:1 !important; white-space:nowrap !important; padding:0 6px !important;
-      text-shadow:none !important; color:inherit !important;
+      padding:0 8px !important;
     }
   `;
   clone.appendChild(style);
@@ -761,7 +761,7 @@ on($('#saveBtn'),'click', function(){
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
-  // Size each label after styles are attached
+  // Now size each label as large as possible INSIDE the live-size circle
   $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
