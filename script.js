@@ -678,24 +678,25 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ========= Export label sizing (probe-based, single calc, large single-line) ========= */
+/* ========= Export label sizing (probe-based, centered, single-line) ========= */
 function fitExportLabel(lbl){
   const token = lbl.parentElement;
 
-  // Real circle diameter + interior width (subtract border)
+  // real circle diameter (after clone is attached)
   const D = token.getBoundingClientRect().width || token.offsetWidth || 0;
   if (!D) return;
-  const tcs = getComputedStyle(token);
-  const border = (parseFloat(tcs.borderLeftWidth) || 0) + (parseFloat(tcs.borderRightWidth) || 0);
-  const effD = Math.max(0, D - border);
 
-  // Small horizontal breathing room so we never touch the rim
-  const pad = 6;
+  // interior width (subtract token borders)
+  const tcs = getComputedStyle(token);
+  const bL = parseFloat(tcs.borderLeftWidth)  || 0;
+  const bR = parseFloat(tcs.borderRightWidth) || 0;
+  const effD = Math.max(0, D - bL - bR);
+
+  const pad = 6;                          // breathing room from the rim
   const usableW = Math.max(0, effD - pad * 2);
 
-  // Reset export label so live UI styles can’t constrain metrics
+  // reset export label styles
   const text = (lbl.textContent || '').trim();
-  const lcs = getComputedStyle(lbl);
   Object.assign(lbl.style, {
     whiteSpace: 'nowrap',
     wordBreak: 'normal',
@@ -706,17 +707,22 @@ function fitExportLabel(lbl){
     alignItems: 'center',
     justifyContent: 'center',
     height: '100%',
+    width: '100%',
+    textAlign: 'center',
     padding: '0 ' + pad + 'px',
-    letterSpacing: ''
+    boxSizing: 'border-box',
   });
 
-  // Gentle, natural tracking squeeze for longer names to stay one line
-  if (text.length >= 9)  lbl.style.letterSpacing = '-0.015em';
-  if (text.length >= 12) lbl.style.letterSpacing = '-0.030em';
+  // gentle tracking squeeze to keep long names on one line
+  let track = '0';
+  if (text.length >= 9)  track = '-0.015em';
+  if (text.length >= 12) track = '-0.030em';
+  lbl.style.setProperty('letter-spacing', track, 'important');
 
-  // --- Offscreen probe to measure width at a known size (linear scale) ---
+  // ---- probe at a known size, then scale analytically ----
+  const lcs = getComputedStyle(lbl);
   const probe = document.createElement('span');
-  probe.textContent = text || 'A'; // avoid zero-width
+  probe.textContent = text || 'A';
   Object.assign(probe.style, {
     position: 'absolute',
     left: '-99999px',
@@ -725,33 +731,39 @@ function fitExportLabel(lbl){
     lineHeight: '1',
     fontFamily: lcs.fontFamily || 'inherit',
     fontWeight: '900',
-    letterSpacing: lbl.style.letterSpacing || '0',
     padding: '0',
     margin: '0'
   });
+  probe.style.setProperty('letter-spacing', track, 'important');
 
-  const BASE = 100; // px — large base so measurement noise is tiny
+  const BASE = 100; // px
   probe.style.setProperty('font-size', BASE + 'px', 'important');
   document.body.appendChild(probe);
-
   let w = probe.getBoundingClientRect().width;
-  if (!w || !isFinite(w)) { w = (text.length || 1) * (BASE * 0.55); } // ultra-fallback
+  if (!w || !isFinite(w)) w = (text.length || 1) * (BASE * 0.55);
 
-  // Width-limited size scaled from the probe; height cap keeps it inside the circle
   const sizeFromWidth  = Math.floor((usableW / w) * BASE);
   const sizeFromHeight = Math.floor(effD - pad * 2);
-
-  // Choose the limiting dimension, then leave a tiny safety margin
   let finalPx = Math.max(12, Math.min(sizeFromWidth, sizeFromHeight));
-  finalPx = Math.floor(finalPx * 0.98);
 
-  // Force it with !important so no CSS can override in the export clone
+  // tiny safety margin
+  finalPx = Math.floor(finalPx * 0.985);
+
+  // apply to label, force with !important
   lbl.style.setProperty('font-size', finalPx + 'px', 'important');
+
+  // final safety pass in case any rounding made it spill
+  let attempts = 4;
+  while (attempts-- > 0 && lbl.scrollWidth > usableW + 0.5){
+    finalPx -= 2;
+    if (finalPx < 12) break;
+    lbl.style.setProperty('font-size', finalPx + 'px', 'important');
+  }
 
   probe.remove();
 }
 
-/* Wait for fonts (stabilizes metrics before we measure) */
+/* Fonts ready helper */
 function waitForFonts(){
   if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(()=>{});
   return new Promise(res => setTimeout(res, 60));
@@ -776,7 +788,7 @@ on($('#saveBtn'),'click', async function(){
   // Export-only CSS: keep circle size; normalize labels; hide row X
   const style = document.createElement('style');
   style.textContent = `
-    .row-del{ display:none !important; }           /* don't show delete X in PNG */
+    .row-del{ display:none !important; }           /* hide delete X in PNG */
     .token{ box-shadow:none !important; }          /* cleaner export; size unchanged */
     .token .label{
       font-weight:900 !important;
@@ -784,8 +796,9 @@ on($('#saveBtn'),'click', async function(){
       word-break:normal !important; hyphens:none !important;
       white-space:nowrap !important; line-height:1 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
-      padding:0 6px !important;                     /* match fitter padding */
-      letter-spacing:0 !important;                  /* fitter will overwrite per-label */
+      width:100% !important; text-align:center !important;
+      padding:0 6px !important; box-sizing:border-box !important;
+      /* DO NOT set letter-spacing here — the fitter applies it per label with !important */
     }
   `;
   clone.appendChild(style);
