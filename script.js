@@ -12,7 +12,7 @@
   }
 })();
 
-/* ---------- Events helper ---------- */
+/* ---------- Event helper ---------- */
 var _supportsPassive=false;
 try{var _o=Object.defineProperty({},'passive',{get:function(){_supportsPassive=true;}});window.addEventListener('x',null,_o);window.removeEventListener('x',null,_o);}catch(e){}
 function on(el,t,h,o){if(!el)return;if(!o){el.addEventListener(t,h,false);return}if(typeof o==='object'&&!_supportsPassive)el.addEventListener(t,h,!!o.capture);else el.addEventListener(t,h,o);}
@@ -123,7 +123,7 @@ function createRow(cfg){
 
   ensureId(drop,'zone');
   chip.textContent=cfg.label; chip.dataset.color=cfg.color; chip.style.background=cfg.color; chip.style.color=contrastColor(cfg.color);
-  del.style.background = darken(cfg.color, 0.35);           // “three shades” darker
+  del.style.background = darken(cfg.color, 0.35);           // darker in same family
 
   chip.id=chip.id||('chip-'+uid());
   node.setAttribute('role','group'); node.setAttribute('aria-labelledby',chip.id);
@@ -155,50 +155,38 @@ var defaultTiers=[
 /* Pre-rendered names (include “Harry”) */
 var communityCast=[
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Meegan","Munch","Paper",
+  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Max","Meegan","Munch","Paper",
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
 
-/* ---------- PRE-RENDERED CIRCLE PALETTE (bright, readable, no repeats) ---------- */
-/* Use these base shades (inspired by your refs). We auto-lighten if needed so black text works. */
+/* ---------- PRE-RENDERED CIRCLE PALETTE ---------- */
 var BASE_PALETTE = [
-  '#FCE38A', '#F3A683', '#F5CD7A', '#F7D794', // warm yellows/oranges
-  '#778BEB', '#EB8688', '#CF6A87', '#786FA6', // periwinkle / pinks / lavender
-  '#F8A5C2', '#64CDDB', '#3EC1D3', '#E77F67', // pink/cyans/coral
-  '#FA991C', '#FAD4C9', '#7FC4D4', '#A7B3E9', // orange / soft tints / teal / lilac
-  '#FBD78B', '#EFA7A7', '#9FD8DF', '#C8B6FF', // soft yellow / rose / sky / pale violet
-  '#B8E1FF', '#FFD6A5', '#C3F0CA', '#FFE5EC'  // light blue / apricot / mint / blush
+  '#FCE38A', '#F3A683', '#F5CD7A', '#F7D794',
+  '#778BEB', '#EB8688', '#CF6A87', '#786FA6',
+  '#F8A5C2', '#64CDDB', '#3EC1D3', '#E77F67',
+  '#FA991C', '#FAD4C9', '#7FC4D4', '#A7B3E9',
+  '#FBD78B', '#EFA7A7', '#9FD8DF', '#C8B6FF',
+  '#B8E1FF', '#FFD6A5', '#C3F0CA', '#FFE5EC'
 ];
 
-function contrastForBlack(hex){
-  // WCAG contrast vs black text (Lt = 0)
-  var L = relativeLuminance(hexToRgb(hex));
-  return (L + 0.05) / 0.05;
-}
-
+function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L+0.05)/0.05; }
 function ensureForBlack(hex){
-  // Aim for ≥5:1 contrast; nudge at most ~24% total so colors stay punchy
-  var out = hex, steps = 0;
-  while (contrastForBlack(out) < 5 && steps < 4) {
-    out = lighten(out, 0.06);   // small 6% step toward white
-    steps++;
-  }
+  // Gentle; ensure ≥5:1 contrast vs black, keep colors punchy
+  var out=hex, steps=0;
+  while(contrastForBlack(out)<5 && steps<4){ out=lighten(out,0.05); steps++; } // 5% steps (≈10% less lightening than before)
   return out;
 }
-
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
-var pIndex = 0;
-function nextPreset(){ var c = presetPalette[pIndex % presetPalette.length]; pIndex++; return c; }
+var pIndex=0; function nextPreset(){var c=presetPalette[pIndex%presetPalette.length];pIndex++;return c;}
 
-/* ---------- Fit label per token ---------- */
+/* ---------- Fit label size (UI only; export uses its own) ---------- */
 function fitLabelSize(label, container, base, min){
   base=base||18; min=min||11;
   label.style.fontSize=base+'px';
-  label.style.whiteSpace='nowrap';
+  label.style.whiteSpace='pre-wrap';
   var tries=0;
   while(tries<18 && (label.scrollWidth>container.clientWidth-10 || label.scrollHeight>container.clientHeight-10)){
-    base-=1; if(base<=13){ label.style.whiteSpace='pre-wrap'; }
-    if(base<min){ base=min; break; }
+    base-=1; if(base<min){ base=min; break; }
     label.style.fontSize=base+'px'; tries++;
   }
 }
@@ -256,7 +244,7 @@ function performMove(itemId,parentId,beforeId){
   });
 }
 
-/* ---------- Insert helper ---------- */
+/* ---------- Insert helper (for reorder) ---------- */
 function insertBeforeForPoint(zone,x,y,except){
   var tokens=[].slice.call(zone.querySelectorAll('.token')).filter(function(t){return t!==except;});
   if(tokens.length===0) return null;
@@ -270,13 +258,13 @@ function insertBeforeForPoint(zone,x,y,except){
   return best;
 }
 
-/* ---------- Click-to-place helper (from tray to zone or back) ---------- */
+/* ---------- Click-to-place (tray/rows) ---------- */
 function enableClickToPlace(zone){
   ensureId(zone,'zone');
   on(zone,'click',function(e){
     var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
     var selected=$('.token.selected'); if(!selected) return;
-    if(isSmall() && !selected.closest('#tray')) return;
+    if(isSmall() && !selected.closest('#tray')) return; // mobile radial is for tray only
     var fromId=ensureId(selected.parentElement,'zone'); if(fromId===zone.id) return;
     var origin=selected.parentElement;
     flipZones([origin, zone], function(){ zone.appendChild(selected); });
@@ -295,7 +283,7 @@ function getDropZoneFromElement(el){
   return null;
 }
 
-/* ---------- Desktop/iPad drag ---------- */
+/* ---------- Desktop/iPad pointer drag ---------- */
 function enablePointerDrag(node){
   var ghost=null,originParent=null,originNext=null,currentZone=null;
   var offsetX=0,offsetY=0,x=0,y=0,raf=null;
@@ -503,7 +491,6 @@ function openRadial(token){
     })(j);
   }
 
-  // retarget or dismiss when tapping anywhere else
   function backdrop(ev){
     if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
     var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
@@ -559,37 +546,59 @@ on($('#undoBtn'),'click',function(){
 });
 on($('#saveBtn'),'click',function(){
   closeRadial();
+  $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+  $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
+
   var panel=$('#boardPanel');
   var cloneWrap=document.createElement('div');
   cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
-  var clone=panel.cloneNode(true);
 
-  // export-only: bigger labels & refit (centered)
+  var clone=panel.cloneNode(true);
+  clone.style.width='1200px';
+  clone.style.maxWidth='1200px';
+
+  // Export-only CSS:
+  // - hide row delete X
+  // - bigger, single-line, perfectly centered labels
   var style=document.createElement('style');
-  style.textContent='.token .label{font-size:22px!important;line-height:1!important;display:flex!important;align-items:center!important;justify-content:center!important}';
-  clone.appendChild(style);
-  $$('.token .label', clone).forEach(function(lbl){
-    var c=lbl.parentElement, base=22, min=12, tries=0; lbl.style.whiteSpace='nowrap';
-    while(tries<18 && (lbl.scrollWidth>c.clientWidth-10 || lbl.scrollHeight>c.clientHeight-10)){
-      base--; if(base<=13){ lbl.style.whiteSpace='pre-wrap'; }
-      if(base<min){ base=min; break; }
-      lbl.style.fontSize=base+'px'; tries++;
+  style.textContent=`
+    .row-del{ display:none !important; }
+    .token .label{
+      font-size:26px !important;
+      line-height:1 !important;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      white-space:nowrap !important;
+      padding:0 8px !important;
     }
+  `;
+  clone.appendChild(style);
+
+  // Fit labels to single line without wrapping
+  $$('.token .label', clone).forEach(function(lbl){
+    var c=lbl.parentElement; var size=26, min=12;
+    lbl.style.fontSize=size+'px'; lbl.style.whiteSpace='nowrap';
+    var limit=Math.max(10,c.clientWidth-16);
+    while(lbl.scrollWidth>limit && size>min){ size-=1; lbl.style.fontSize=size+'px'; }
   });
 
+  // Omit title area if empty
   var title=clone.querySelector('.board-title');
-  if(title && title.textContent.replace(/\s+/g,'').length===0){
-    title.parentNode.removeChild(title);
-    var pen = clone.querySelector('.title-pen'); if(pen && pen.parentNode) pen.parentNode.removeChild(pen);
+  if(title && title.textContent.replace(/\s+/g,'')===''){
+    var wrap=title.parentElement;
+    if(wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
-  clone.style.width='1200px'; clone.style.maxWidth='1200px';
+
   cloneWrap.appendChild(clone); document.body.appendChild(cloneWrap);
 
-  html2canvas(clone,{backgroundColor:cssVar('--surface')||null,useCORS:true,scale:2,width:1200,windowWidth:1200})
-    .then(function(canvas){
-      var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png'; document.body.appendChild(a); a.click(); a.remove();
-      cloneWrap.remove();
-    }).catch(function(){ cloneWrap.remove(); });
+  html2canvas(clone,{
+    backgroundColor: cssVar('--surface') || null,
+    useCORS:true, scale:2, width:1200, windowWidth:1200
+  }).then(function(canvas){
+    var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
+    document.body.appendChild(a); a.click(); a.remove(); cloneWrap.remove();
+  }).catch(function(){ cloneWrap.remove(); });
 });
 
 /* ---------- Keyboard quick-jump to row (1..N) ---------- */
