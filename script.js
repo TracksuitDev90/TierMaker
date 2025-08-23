@@ -678,14 +678,15 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ===== Export-only label fitter (LARGE single-line text, same circle) ===== */
+/* ===== Export-only label fitter (probe-based, LARGE single-line text) ===== */
 function fitExportLabel(lbl){
   const token = lbl.parentElement;
-  const D = token.getBoundingClientRect().width; // actual circle diameter in export
-  const pad = 6;                                  // ↓ tighter padding = more width
+  const D = token.getBoundingClientRect().width;   // true circle diameter in export
+  const pad = 6;                                    // small breathing room
+  const maxTextHeight = D - pad * 2;                // keep text inside circle
+  const text = (lbl.textContent || '').trim();
 
-  // reset UI text rules so nothing forces smaller sizes
-  const name = (lbl.textContent || '').trim();
+  // Reset label so export CSS can't constrain sizing
   lbl.style.whiteSpace = 'nowrap';
   lbl.style.wordBreak  = 'normal';
   lbl.style.hyphens    = 'none';
@@ -698,31 +699,58 @@ function fitExportLabel(lbl){
   lbl.style.padding    = '0 ' + pad + 'px';
   lbl.style.letterSpacing = '';
 
-  // very gentle squeeze for long names (keeps single line, looks natural)
-  if (name.length >= 9)  lbl.style.letterSpacing = '-0.015em';
-  if (name.length >= 12) lbl.style.letterSpacing = '-0.030em';
+  // Gentle auto-squeeze for long names (keeps single line, still looks natural)
+  if (text.length >= 9)  lbl.style.letterSpacing = '-0.015em';
+  if (text.length >= 12) lbl.style.letterSpacing = '-0.030em';
 
-  // force font-size with !important so base CSS can't override
-  const setFont = px => lbl.style.setProperty('font-size', px + 'px', 'important');
+  // --- Probe element (measure off-DOM flow) ---
+  const cs = getComputedStyle(lbl);
+  const probe = document.createElement('span');
+  probe.textContent = text;
+  probe.style.position = 'absolute';
+  probe.style.left = '-99999px';
+  probe.style.top = '0';
+  probe.style.whiteSpace = 'nowrap';
+  probe.style.lineHeight = '1';
+  probe.style.fontFamily = cs.fontFamily || 'inherit';
+  probe.style.fontWeight = '900';
+  probe.style.letterSpacing = lbl.style.letterSpacing || '0';
+  probe.style.padding = '0';
+  probe.style.margin = '0';
+  document.body.appendChild(probe);
 
-  // Wider search window (30%–85% of diameter), aggressive guess first
-  let lo = Math.floor(D * 0.30);
-  let hi = Math.floor(D * 0.85);
-  let best = lo;
+  const usableW = D - pad * 2;
 
-  const fits = (px) => {
-    setFont(px);
-    return lbl.scrollWidth <= (D - pad * 2 + 0.5); // +0.5 guards subpixel rounding
+  const setFont = px => {
+    probe.style.fontSize = px + 'px';
+    // also cap against the circle’s interior height
+    return px <= maxTextHeight;
   };
 
-  const guess = Math.floor(D * 0.62);
+  const fits = px => {
+    if (!setFont(px)) return false;
+    const w = probe.getBoundingClientRect().width;
+    return w <= (usableW + 0.5); // sub-pixel guard
+  };
+
+  // Aggressive window (30–90% of diameter), bold first guess
+  let lo = Math.floor(D * 0.30);
+  let hi = Math.floor(D * 0.90);
+  let best = lo;
+
+  const guess = Math.floor(D * 0.64);
   if (fits(guess)) { best = guess; lo = guess; } else { hi = guess; }
 
   while (lo <= hi){
     const mid = (lo + hi) >> 1;
     if (fits(mid)) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
-  setFont(best);
+
+  // Apply to the real label (force with !important so nothing overrides)
+  lbl.style.setProperty('font-size', best + 'px', 'important');
+
+  // cleanup
+  probe.remove();
 }
 
 /* ===== Save PNG (no circle resize; only bigger labels) ===== */
@@ -754,7 +782,7 @@ on($('#saveBtn'),'click', function(){
       word-break:normal !important; hyphens:none !important;
       white-space:nowrap !important; line-height:1 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
-      padding:0 6px !important;                       /* match fitter's tighter padding */
+      padding:0 6px !important;
     }
   `;
   clone.appendChild(style);
@@ -766,7 +794,7 @@ on($('#saveBtn'),'click', function(){
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
-  // Maximize label size inside existing circles
+  // Upsize each label using the probe-based fitter
   $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
@@ -775,7 +803,7 @@ on($('#saveBtn'),'click', function(){
   html2canvas(clone, {
     backgroundColor: cssVar('--surface') || null,
     useCORS: true,
-    scale: 3,
+    scale: 2,
     width: 1200,
     windowWidth: 1200
   }).then(canvas => {
