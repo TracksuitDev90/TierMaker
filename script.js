@@ -678,25 +678,26 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ========= Export label sizing (probe-based, centered, single-line) ========= */
+/* ========= Export label sizing (robust, centered, single line) ========= */
 function fitExportLabel(lbl){
   const token = lbl.parentElement;
 
-  // real circle diameter (after clone is attached)
+  // Real circle diameter (clone is already attached)
   const D = token.getBoundingClientRect().width || token.offsetWidth || 0;
   if (!D) return;
 
-  // interior width (subtract token borders)
+  // Interior (subtract any token borders)
   const tcs = getComputedStyle(token);
-  const bL = parseFloat(tcs.borderLeftWidth)  || 0;
-  const bR = parseFloat(tcs.borderRightWidth) || 0;
-  const effD = Math.max(0, D - bL - bR);
+  const effD = Math.max(
+    0,
+    D - (parseFloat(tcs.borderLeftWidth) || 0) - (parseFloat(tcs.borderRightWidth) || 0)
+  );
 
-  const pad = 6;                          // breathing room from the rim
+  const pad = 6;                              // small breathing room
   const usableW = Math.max(0, effD - pad * 2);
-
-  // reset export label styles
   const text = (lbl.textContent || '').trim();
+
+  // Normalize the export label area and center it
   Object.assign(lbl.style, {
     whiteSpace: 'nowrap',
     wordBreak: 'normal',
@@ -713,13 +714,13 @@ function fitExportLabel(lbl){
     boxSizing: 'border-box',
   });
 
-  // gentle tracking squeeze to keep long names on one line
+  // Gentle squeeze for longer names (keeps single line, still looks natural)
   let track = '0';
   if (text.length >= 9)  track = '-0.015em';
   if (text.length >= 12) track = '-0.030em';
   lbl.style.setProperty('letter-spacing', track, 'important');
 
-  // ---- probe at a known size, then scale analytically ----
+  // ---- Probe at a known size, then scale by width & height caps ----
   const lcs = getComputedStyle(lbl);
   const probe = document.createElement('span');
   probe.textContent = text || 'A';
@@ -736,40 +737,41 @@ function fitExportLabel(lbl){
   });
   probe.style.setProperty('letter-spacing', track, 'important');
 
-  const BASE = 100; // px
+  const BASE = 100; // big base eliminates measurement noise
   probe.style.setProperty('font-size', BASE + 'px', 'important');
   document.body.appendChild(probe);
-  let w = probe.getBoundingClientRect().width;
-  if (!w || !isFinite(w)) w = (text.length || 1) * (BASE * 0.55);
 
-  const sizeFromWidth  = Math.floor((usableW / w) * BASE);
-  const sizeFromHeight = Math.floor(effD - pad * 2);
-  let finalPx = Math.max(12, Math.min(sizeFromWidth, sizeFromHeight));
+  let wBase = probe.getBoundingClientRect().width;
+  if (!wBase || !isFinite(wBase)) wBase = (text.length || 1) * (BASE * 0.55);
 
-  // tiny safety margin
-  finalPx = Math.floor(finalPx * 0.985);
+  // Width- and height-derived font sizes
+  const sizeFromWidth  = (usableW / wBase) * BASE;
+  const sizeFromHeight = effD - pad * 2;
 
-  // apply to label, force with !important
-  lbl.style.setProperty('font-size', finalPx + 'px', 'important');
+  // Pick the limiting dimension and keep a tiny safety margin
+  let finalPx = Math.max(12, Math.min(sizeFromWidth, sizeFromHeight)) * 0.985;
 
-  // final safety pass in case any rounding made it spill
-  let attempts = 4;
-  while (attempts-- > 0 && lbl.scrollWidth > usableW + 0.5){
-    finalPx -= 2;
-    if (finalPx < 12) break;
-    lbl.style.setProperty('font-size', finalPx + 'px', 'important');
+  // Verify at the target size, then correct precisely if there’s any overshoot
+  probe.style.setProperty('font-size', finalPx + 'px', 'important');
+  const wTarget = probe.getBoundingClientRect().width;
+  if (wTarget > usableW) {
+    finalPx = Math.floor(finalPx * (usableW / wTarget) * 0.995); // exact scale-down + hair of margin
+    probe.style.setProperty('font-size', finalPx + 'px', 'important');
   }
+
+  // Apply to the real label with !important so nothing overrides
+  lbl.style.setProperty('font-size', Math.max(12, Math.floor(finalPx)) + 'px', 'important');
 
   probe.remove();
 }
 
-/* Fonts ready helper */
+/* Wait for fonts so metrics are stable */
 function waitForFonts(){
   if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(()=>{});
   return new Promise(res => setTimeout(res, 60));
 }
 
-/* ==================== Save PNG (same circle size; bigger single-line labels) ==================== */
+/* ==================== Save PNG (same circle size; bigger, centered labels) ==================== */
 on($('#saveBtn'),'click', async function(){
   if (typeof closeRadial === 'function') closeRadial();
   $$('.token.selected').forEach(t => t.classList.remove('selected'));
@@ -788,8 +790,8 @@ on($('#saveBtn'),'click', async function(){
   // Export-only CSS: keep circle size; normalize labels; hide row X
   const style = document.createElement('style');
   style.textContent = `
-    .row-del{ display:none !important; }           /* hide delete X in PNG */
-    .token{ box-shadow:none !important; }          /* cleaner export; size unchanged */
+    .row-del{ display:none !important; }         /* hide delete X in PNG */
+    .token{ box-shadow:none !important; }        /* cleaner export; size unchanged */
     .token .label{
       font-weight:900 !important;
       text-shadow:none !important;
@@ -798,7 +800,7 @@ on($('#saveBtn'),'click', async function(){
       display:flex !important; align-items:center !important; justify-content:center !important;
       width:100% !important; text-align:center !important;
       padding:0 6px !important; box-sizing:border-box !important;
-      /* DO NOT set letter-spacing here — the fitter applies it per label with !important */
+      /* DO NOT set letter-spacing here; fitter sets it per-label with !important */
     }
   `;
   clone.appendChild(style);
@@ -806,8 +808,7 @@ on($('#saveBtn'),'click', async function(){
   // Omit empty board title in export
   const title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'') === '') {
-    const wrap = title.parentElement;
-    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    const wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
   cloneWrap.appendChild(clone);
@@ -825,7 +826,7 @@ on($('#saveBtn'),'click', async function(){
   html2canvas(clone, {
     backgroundColor: cssVar('--surface') || null,
     useCORS: true,
-    scale: 2,                   // raise to 3 for extra crispness
+    scale: 2,                 // increase to 3 only for extra sharpness
     width: 1200,
     windowWidth: 1200
   }).then(canvas => {
