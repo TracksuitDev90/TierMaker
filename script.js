@@ -678,80 +678,86 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ========= Export-only label sizing (probe-based, large single line) ========= */
+/* ========= Export label sizing (probe-based, single calc, large single-line) ========= */
 function fitExportLabel(lbl){
   const token = lbl.parentElement;
-  let D = token.getBoundingClientRect().width || token.offsetWidth || 0; // circle diameter
-  if (D <= 0) return;
 
-  const pad = 6;                          // small breathing room
+  // Real circle diameter + interior width (subtract border)
+  const D = token.getBoundingClientRect().width || token.offsetWidth || 0;
+  if (!D) return;
+  const tcs = getComputedStyle(token);
+  const border = (parseFloat(tcs.borderLeftWidth) || 0) + (parseFloat(tcs.borderRightWidth) || 0);
+  const effD = Math.max(0, D - border);
+
+  // Small horizontal breathing room so we never touch the rim
+  const pad = 6;
+  const usableW = Math.max(0, effD - pad * 2);
+
+  // Reset export label so live UI styles can’t constrain metrics
   const text = (lbl.textContent || '').trim();
-  const maxTextHeight = D - pad * 2;      // keep text inside circle
+  const lcs = getComputedStyle(lbl);
+  Object.assign(lbl.style, {
+    whiteSpace: 'nowrap',
+    wordBreak: 'normal',
+    hyphens: 'none',
+    textTransform: 'none',
+    lineHeight: '1',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    padding: '0 ' + pad + 'px',
+    letterSpacing: ''
+  });
 
-  // Reset any live UI constraints for the export clone
-  lbl.style.whiteSpace = 'nowrap';
-  lbl.style.wordBreak  = 'normal';
-  lbl.style.hyphens    = 'none';
-  lbl.style.textTransform = 'none';
-  lbl.style.lineHeight = '1';
-  lbl.style.display    = 'flex';
-  lbl.style.alignItems = 'center';
-  lbl.style.justifyContent = 'center';
-  lbl.style.height     = '100%';
-  lbl.style.padding    = '0 ' + pad + 'px';
-  lbl.style.letterSpacing = '';
-
-  // Gentle auto-squeeze so long names still stay on one line
+  // Gentle, natural tracking squeeze for longer names to stay one line
   if (text.length >= 9)  lbl.style.letterSpacing = '-0.015em';
   if (text.length >= 12) lbl.style.letterSpacing = '-0.030em';
 
-  // Offscreen probe for reliable text width measurement
-  const cs = getComputedStyle(lbl);
+  // --- Offscreen probe to measure width at a known size (linear scale) ---
   const probe = document.createElement('span');
-  probe.textContent = text;
+  probe.textContent = text || 'A'; // avoid zero-width
   Object.assign(probe.style, {
-    position: 'absolute', left: '-99999px', top: '0',
-    whiteSpace: 'nowrap', lineHeight: '1',
-    fontFamily: cs.fontFamily || 'inherit',
+    position: 'absolute',
+    left: '-99999px',
+    top: '0',
+    whiteSpace: 'nowrap',
+    lineHeight: '1',
+    fontFamily: lcs.fontFamily || 'inherit',
     fontWeight: '900',
     letterSpacing: lbl.style.letterSpacing || '0',
-    padding: '0', margin: '0'
+    padding: '0',
+    margin: '0'
   });
+
+  const BASE = 100; // px — large base so measurement noise is tiny
+  probe.style.setProperty('font-size', BASE + 'px', 'important');
   document.body.appendChild(probe);
 
-  const usableW = D - pad * 2;
-  const setFont = px => probe.style.setProperty('font-size', px + 'px', 'important');
-  const fits = px => {
-    if (px > maxTextHeight) return false;              // don't exceed interior height
-    setFont(px);
-    return probe.getBoundingClientRect().width <= usableW + 0.5; // subpixel guard
-  };
+  let w = probe.getBoundingClientRect().width;
+  if (!w || !isFinite(w)) { w = (text.length || 1) * (BASE * 0.55); } // ultra-fallback
 
-  // Aggressive window with bold first guess
-  let lo = Math.floor(D * 0.30);
-  let hi = Math.floor(D * 0.95);
-  let best = lo;
+  // Width-limited size scaled from the probe; height cap keeps it inside the circle
+  const sizeFromWidth  = Math.floor((usableW / w) * BASE);
+  const sizeFromHeight = Math.floor(effD - pad * 2);
 
-  const guess = Math.floor(D * 0.64);
-  if (fits(guess)) { best = guess; lo = guess; } else { hi = guess; }
+  // Choose the limiting dimension, then leave a tiny safety margin
+  let finalPx = Math.max(12, Math.min(sizeFromWidth, sizeFromHeight));
+  finalPx = Math.floor(finalPx * 0.98);
 
-  while (lo <= hi){
-    const mid = (lo + hi) >> 1;
-    if (fits(mid)) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
-  }
+  // Force it with !important so no CSS can override in the export clone
+  lbl.style.setProperty('font-size', finalPx + 'px', 'important');
 
-  // Apply to the real label (force with !important so nothing overrides)
-  lbl.style.setProperty('font-size', best + 'px', 'important');
   probe.remove();
 }
 
-/* Fonts ready helper (stabilizes text metrics before measuring) */
+/* Wait for fonts (stabilizes metrics before we measure) */
 function waitForFonts(){
   if (document.fonts && document.fonts.ready) return document.fonts.ready.catch(()=>{});
-  return new Promise(res => setTimeout(res, 60)); // fallback if Font Loading API is absent
+  return new Promise(res => setTimeout(res, 60));
 }
 
-/* ==================== Save PNG (no circle resize; bigger labels) ==================== */
+/* ==================== Save PNG (same circle size; bigger single-line labels) ==================== */
 on($('#saveBtn'),'click', async function(){
   if (typeof closeRadial === 'function') closeRadial();
   $$('.token.selected').forEach(t => t.classList.remove('selected'));
@@ -759,7 +765,7 @@ on($('#saveBtn'),'click', async function(){
 
   const panel = $('#boardPanel');
 
-  // Build export clone and ATTACH before measuring
+  // Build export clone and ATTACH before measuring so sizes are real
   const cloneWrap = document.createElement('div');
   Object.assign(cloneWrap.style, { position:'fixed', left:'-99999px', top:'0' });
 
@@ -767,18 +773,19 @@ on($('#saveBtn'),'click', async function(){
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  // Export-only CSS: keep circle size; normalize label rules; hide row X
+  // Export-only CSS: keep circle size; normalize labels; hide row X
   const style = document.createElement('style');
   style.textContent = `
-    .row-del{ display:none !important; }            /* don't show delete X in PNG */
-    .token{ box-shadow:none !important; }           /* cleaner export; size unchanged */
+    .row-del{ display:none !important; }           /* don't show delete X in PNG */
+    .token{ box-shadow:none !important; }          /* cleaner export; size unchanged */
     .token .label{
       font-weight:900 !important;
       text-shadow:none !important;
       word-break:normal !important; hyphens:none !important;
       white-space:nowrap !important; line-height:1 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
-      padding:0 6px !important;                      /* match fitter padding */
+      padding:0 6px !important;                     /* match fitter padding */
+      letter-spacing:0 !important;                  /* fitter will overwrite per-label */
     }
   `;
   clone.appendChild(style);
@@ -794,18 +801,18 @@ on($('#saveBtn'),'click', async function(){
   document.body.appendChild(cloneWrap);
 
   // Ensure layout & fonts are ready before fitting
-  void clone.offsetHeight;             // reflow
-  await waitForFonts();                // wait for font metrics
+  void clone.offsetHeight;       // reflow
+  await waitForFonts();
   await new Promise(r => requestAnimationFrame(r));
 
-  // Upsize each label to maximum single-line size inside existing circles
+  // Upsize each label to max single-line inside EXISTING circles
   $$('.token .label', clone).forEach(fitExportLabel);
 
-  // Render export
+  // Render PNG
   html2canvas(clone, {
     backgroundColor: cssVar('--surface') || null,
     useCORS: true,
-    scale: 2,               // bump to 3 if you want a crisper PNG (doesn't affect layout)
+    scale: 2,                   // raise to 3 for extra crispness
     width: 1200,
     windowWidth: 1200
   }).then(canvas => {
