@@ -170,13 +170,18 @@ var BASE_PALETTE = [
   '#B8E1FF', '#FFD6A5', '#C3F0CA', '#FFE5EC'  // light blue / apricot / mint / blush
 ];
 
-/* ensure black text has strong contrast; gently lighten darker hues */
+function contrastForBlack(hex){
+  // WCAG contrast vs black text (Lt = 0)
+  var L = relativeLuminance(hexToRgb(hex));
+  return (L + 0.05) / 0.05;
+}
+
 function ensureForBlack(hex){
-  var out = hex, L = relativeLuminance(hexToRgb(out)), step = 0;
-  while (L < 0.70 && step < 8) {           // nudge until comfortably light
-    out = lighten(out, 0.12);
-    L = relativeLuminance(hexToRgb(out));
-    step++;
+  // Aim for ≥5:1 contrast; nudge at most ~24% total so colors stay punchy
+  var out = hex, steps = 0;
+  while (contrastForBlack(out) < 5 && steps < 4) {
+    out = lighten(out, 0.06);   // small 6% step toward white
+    steps++;
   }
   return out;
 }
