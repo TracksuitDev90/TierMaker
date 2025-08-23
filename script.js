@@ -186,7 +186,7 @@ var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.l
 /* Pre-rendered creators (incl. “Harry”) */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Meegan","Munch","Paper",
+  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan","Munch","Paper",
   "Ray","Safoof","V","Verse","Wobbles","Xavier"
 ];
 
@@ -678,39 +678,41 @@ on($('#undoBtn'),'click', function(){
   $('#undoBtn').disabled = historyStack.length===0;
 });
 
-/* ===== Export-only label fitter (bigger, perfectly centered, single line) ===== */
+/* ===== Export-only label fitter (KIKKI style: BIG, uppercase, single line) ===== */
 function fitExportLabel(lbl){
   var token = lbl.parentElement;
-  var D = token.clientWidth;    // circle diameter (after export CSS below)
-  var innerPad = 12;
+  var D = token.clientWidth;
+  var pad = Math.max(12, Math.floor(D * 0.10)); // 10% inner padding
 
-  // force single line + perfect centering
+  // KIKKI look
+  lbl.style.textTransform = 'uppercase';
+  lbl.style.fontWeight = '900';
+  lbl.style.letterSpacing = '0.02em';
   lbl.style.whiteSpace = 'nowrap';
   lbl.style.lineHeight = '1';
   lbl.style.display = 'flex';
   lbl.style.alignItems = 'center';
   lbl.style.justifyContent = 'center';
   lbl.style.height = '100%';
-  lbl.style.padding = '0 ' + innerPad + 'px';
+  lbl.style.padding = '0 ' + pad + 'px';
 
-  // allow significantly larger type
-  var minPx = Math.max(12, Math.floor(D * 0.18));
-  var maxPx = Math.floor(D * 0.44);
+  var minPx = Math.max(14, Math.floor(D * 0.22));
+  var maxPx = Math.floor(D * 0.56);
   var best = minPx;
 
   function fits(px){
     lbl.style.fontSize = px + 'px';
-    return lbl.scrollWidth <= (D - innerPad * 2);
+    return lbl.scrollWidth <= (D - pad * 2);
   }
   while (minPx <= maxPx){
     var mid = (minPx + maxPx) >> 1;
-    if (fits(mid)){ best = mid; minPx = mid + 1; }
+    if (fits(mid)) { best = mid; minPx = mid + 1; }
     else { maxPx = mid - 1; }
   }
   lbl.style.fontSize = best + 'px';
 }
 
-/* ===== Save PNG (export-only upscales tokens + fits labels) ===== */
+/* ===== Save PNG (bigger circles + KIKKI labels; hides row X; keeps title if present) ===== */
 on($('#saveBtn'),'click', function(){
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
@@ -723,9 +725,8 @@ on($('#saveBtn'),'click', function(){
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  // export-only CSS
-  var EXPORT_TOKEN = 144;  // ↑ increase if you want even bigger circles in the PNG
-  var EXPORT_GAP   = 18;
+  var EXPORT_TOKEN = 168; // bigger circles in PNG
+  var EXPORT_GAP   = 20;
 
   var style = document.createElement('style');
   style.textContent = `
@@ -741,24 +742,26 @@ on($('#saveBtn'),'click', function(){
       box-shadow:none !important;
     }
     .token img{ width:100% !important; height:100% !important; object-fit:cover !important; }
-    .row-del{ display:none !important; } /* hide the row X in the PNG */
+    .row-del{ display:none !important; } /* don’t show the row delete X in the PNG */
     .token .label{
       font-weight:900 !important;
+      text-transform:uppercase !important;
+      letter-spacing:0.02em !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
       line-height:1 !important; white-space:nowrap !important; padding:0 6px !important;
-      text-shadow:none !important;
+      text-shadow:none !important; color:inherit !important;
     }
   `;
   clone.appendChild(style);
 
-  // drop empty title for export
+  // Omit empty title
   var title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'') === '') {
     var wrap = title.parentElement;
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
-  // fit labels after CSS is attached
+  // Size each label after styles are attached
   $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
