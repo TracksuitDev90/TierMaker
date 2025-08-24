@@ -194,7 +194,7 @@ var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.l
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
-  "Munch","Paper","Ray","Safoof","Tems","TomTom","V","Verse","Wobbles","Xavier"
+  "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
 /* ---------- PRE-RENDERED CIRCLE PALETTE (20% less pale) ---------- */
