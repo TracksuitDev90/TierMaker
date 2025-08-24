@@ -186,8 +186,8 @@ var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.l
 /* Pre-rendered creators (incl. “Harry”) */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kyle","Lewis","Meegan","Munch","Paper",
-  "Ray","Safoof","V","Verse","Wobbles","Xavier"
+  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan","Munch","Paper",
+  "Ray","Safoof","V","Temz","TomTom","Verse","Wobbles","Xavier"
 ];
 
 /* ---------- PRE-RENDERED CIRCLE PALETTE (punchier, more variety) ---------- */
