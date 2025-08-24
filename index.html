@@ -3,10 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FSTM — Tier List Maker</title>
-
-  <!-- CSS (relative path + cache buster) -->
-  <link rel="stylesheet" href="./style.css?v=build52" />
+  <meta name="theme-color" content="#0f1115" />
+  <title>FIRESIDE tier maker</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="wrap">
@@ -17,7 +16,7 @@
 
     <!-- Create custom items -->
     <section class="panel creator-grid" aria-labelledby="createTitle">
-      <h2 id="createTitle" class="section-title">create custom items</h2>
+      <h2 id="createTitle" class="section-title">Create custom items</h2>
 
       <div class="creator-line">
         <label class="sr" for="nameInput">Name circle</label>
@@ -37,42 +36,40 @@
       </div>
 
       <p class="help">
-        <span class="help-tag">Help</span>
-        Desktop/iPad: drag circles into rows. Phone: tap a circle to choose a row.
-        You can reorder or drag back to Image Storage. Tap the small X on a tier
-        label to delete that row (its items return to Image Storage).
+        <strong>Help</strong> — <span id="helpText">Desktop/iPad: drag circles into rows. Phone: tap a circle to choose a row.</span>
       </p>
     </section>
 
-    <!-- Tier Board (title editable) -->
-    <section class="panel" id="boardPanel" aria-label="Tier Board">
-      <h2 class="board-title" contenteditable="true" aria-label="Edit board title">
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:8px">
-          <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 5.63a1 1 0 000-1.41l-1.93-1.93a1 1 0 00-1.41 0l-1.34 1.34 3.75 3.75 1.34-1.34z"/>
-        </svg>
-        Tier Board (optional title)
-      </h2>
-      <div id="tierBoard" aria-live="off" aria-label="Tier board"></div>
+    <!-- Tier board -->
+    <section class="panel" id="boardPanel" aria-label="Tier board">
+      <div class="board-title-wrap">
+        <span class="title-pen" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0L14.13 4.7l3.75 3.75 2.83-1.41z"/></svg>
+        </span>
+        <h2 class="board-title" contenteditable="true" spellcheck="false"></h2>
+      </div>
+
+      <div id="tierBoard" aria-live="off"></div>
     </section>
 
-    <!-- Controls row (tools) -->
+    <!-- Controls (moved below the board) -->
     <section class="panel" aria-label="Board Controls">
       <div class="controls">
-        <button id="addTierBtn" class="btn btn-green" type="button">
+        <button id="addTierBtn" class="btn" type="button">
           <span class="ico">
             <svg viewBox="0 0 24 24"><path d="M3 7h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
           </span>
           <span>Add Tier</span>
         </button>
 
-        <button id="undoBtn" class="btn btn-orange" type="button" disabled>
+        <button id="undoBtn" class="btn" type="button" disabled>
           <span class="ico">
             <svg viewBox="0 0 24 24"><path d="M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 01-10 10H6v-2h6a8 8 0 000-16z"/></svg>
           </span>
           <span>Undo</span>
         </button>
 
-        <button id="trashClear" class="btn btn-red" type="button">
+        <button id="trashClear" class="btn" type="button">
           <span class="ico">
             <svg viewBox="0 0 24 24"><path d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/></svg>
           </span>
@@ -84,7 +81,7 @@
           <span class="theme-text">Light</span>
         </button>
 
-        <button id="saveBtn" class="btn btn-blue" type="button">
+        <button id="saveBtn" class="btn" type="button">
           <span class="ico">
             <svg viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6h-4V8H7l5-5zm-7 14h14v2H5v-2z"/></svg>
           </span>
@@ -93,15 +90,16 @@
       </div>
     </section>
 
-    <!-- Image Storage -->
+    <!-- Items tray -->
     <section class="panel">
-      <h2 class="board-title">Image Storage</h2>
+      <h2 class="section-title">Image Storage</h2>
       <div id="tray"></div>
     </section>
 
     <!-- Mobile radial picker -->
     <div id="radialPicker" class="radial hidden" aria-hidden="true">
       <div class="radial-options"></div>
+      <div class="radial-highlight" hidden></div>
       <button class="radial-close" type="button" aria-label="Close">
         <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12.01l-6.29-6.3-1.41 1.42L10.59 13.4l-6.3 6.3 1.42 1.41 6.29-6.29 6.29 6.29 1.41-1.41-6.3-6.3 6.3-6.29-1.41-1.42z"/></svg>
       </button>
@@ -111,21 +109,7 @@
     <div id="live" class="sr" aria-live="polite"></div>
   </div>
 
-  <!-- libs first (defer) -->
-  <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-
-  <!-- Boot sentry so Console shows any errors immediately -->
-  <script>
-    console.log('[TierMaker] booting…');
-    window.addEventListener('error', e => {
-      console.error('Global error:', e.message, 'at', e.filename + ':' + e.lineno);
-    });
-    window.addEventListener('unhandledrejection', e => {
-      console.error('Unhandled promise rejection:', e.reason);
-    });
-  </script>
-
-  <!-- your app (RELATIVE path + cache-buster + defer) -->
-  <script defer src="./script.js?v=build52"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
