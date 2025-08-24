@@ -58,6 +58,13 @@ function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/
 function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
 function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f)); }
 function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round(c.r+(255-c.r)*f), Math.round(c.g+(255-c.g)*f), Math.round(c.b+(255-c.b)*f)); }
+function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
+  return rgbToHex(
+    Math.round(a.r+(b.r-a.r)*t),
+    Math.round(a.g+(b.g-a.g)*t),
+    Math.round(a.b+(b.b-a.b)*t)
+  );
+}
 
 /* ---------- Theme (button shows TARGET mode) ---------- */
 (function(){
@@ -74,7 +81,6 @@ function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round
     if(icon) icon.innerHTML = (target==='Light'
       ? '<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       : '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    // retint rows
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
       if (drop && drop.dataset.manual!=='true'){
@@ -184,14 +190,14 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* Pre-rendered creators (incl. “Harry”) */
+/* Pre-rendered creators (added Kikki, Tems, TomTom) */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan","Munch","Paper",
-  "Ray","Safoof","Temz","TomTom","V","Verse","Wobbles","Xavier"
+  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
+  "Munch","Paper","Ray","Safoof","Tems","TomTom","V","Verse","Wobbles","Xavier"
 ];
 
-/* ---------- PRE-RENDERED CIRCLE PALETTE (punchier, more variety) ---------- */
+/* ---------- PRE-RENDERED CIRCLE PALETTE (20% less pale) ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -201,23 +207,39 @@ var BASE_PALETTE = [
   '#B8E1FF','#FFD6A5','#C3F0CA','#FFE5EC',
   '#F4B942','#9EE493','#8AC6D1','#FF8FAB','#B0A8F0'
 ];
+
 function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
-/* Less pale vs original: small lightening steps to reach ≥4.5:1 against black */
+
+/* 
+  Make colors readable on black text with LESS lightening:
+  - target contrast: 4.2:1 (still very readable for bold/large)
+  - after reaching target, pull 20% back toward the original base (less pale)
+  - if that pull drops below target, nudge back up in tiny steps
+*/
 function ensureForBlack(hex){
-  var out=hex, steps=0;
-  while (contrastForBlack(out) < 4.5 && steps < 4) { out = lighten(out, 0.0375); steps++; }
-  return out;
+  var target = 4.2;
+  var safe = hex, steps = 0;
+  while (contrastForBlack(safe) < target && steps < 8){
+    safe = lighten(safe, 0.03); steps++;
+  }
+  // pull 20% toward the original (darker) to reduce paleness
+  var toned = mixHex(safe, hex, 0.20);
+  var guard = 0;
+  while (contrastForBlack(toned) < target && guard < 4){
+    toned = lighten(toned, 0.01); guard++;
+  }
+  return toned;
 }
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0;
 function nextPreset(){ var c = presetPalette[pIndex % presetPalette.length]; pIndex++; return c; }
 
-/* ---------- NEW: Live label fitter (UI) ---------- */
+/* ---------- Live label fitter (UI) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
-  var D = token.clientWidth;           // circle diameter
-  var pad = 10;                        // inner breathing room
+  var D = token.clientWidth;
+  var pad = 10;
 
   var s = lbl.style;
   s.whiteSpace = 'nowrap';
@@ -283,7 +305,6 @@ function buildNameToken(name, color, forceBlack){
   var label = document.createElement('div'); label.className='label'; label.textContent=name;
   label.style.color = forceBlack ? '#111' : contrastColor(color);
   el.appendChild(label);
-  // ⬇️ live single-line fit
   fitLiveLabel(label);
   return el;
 }
@@ -333,7 +354,7 @@ function enableClickToPlace(zone){
   on(zone,'click', function(e){
     var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
     var selected = $('.token.selected'); if (!selected) return;
-    if(isSmall() && !selected.closest('#tray')) return; // mobile: radial tray-only
+    if(isSmall() && !selected.closest('#tray')) return;
     var fromId = ensureId(selected.parentElement,'zone'); if(fromId===zone.id) return;
     var origin = selected.parentElement;
     flipZones([origin, zone], function(){ zone.appendChild(selected); });
@@ -606,7 +627,6 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  // compact, uniform arc
   var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
   var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
   var R=Math.max(BASE_R, need);
@@ -735,7 +755,7 @@ function fitExportLabel(lbl){
   lbl.style.fontSize = best + 'px';
 }
 
-/* ===== Save PNG (export-only upscales tokens + fits labels) ===== */
+/* ===== Save PNG (keeps on-screen circle size) ===== */
 on($('#saveBtn'),'click', function(){
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
@@ -748,23 +768,9 @@ on($('#saveBtn'),'click', function(){
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  var EXPORT_TOKEN = 144;
-  var EXPORT_GAP   = 18;
-
+  // Only hide row X and enforce label layout; DO NOT change token size/grid
   var style = document.createElement('style');
   style.textContent = `
-    .tier-drop{
-      grid-template-columns: repeat(auto-fill, minmax(${EXPORT_TOKEN + 6}px, 1fr)) !important;
-      gap: ${EXPORT_GAP}px !important;
-    }
-    .token{
-      width:${EXPORT_TOKEN}px !important;
-      height:${EXPORT_TOKEN}px !important;
-      border-radius:999px !important;
-      border-width:4px !important;
-      box-shadow:none !important;
-    }
-    .token img{ width:100% !important; height:100% !important; object-fit:cover !important; }
     .row-del{ display:none !important; }
     .token .label{
       font-weight:900 !important;
@@ -775,12 +781,14 @@ on($('#saveBtn'),'click', function(){
   `;
   clone.appendChild(style);
 
+  // drop empty title for export
   var title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'') === '') {
     var wrap = title.parentElement;
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
+  // Fit labels to the on-screen circle size
   $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
@@ -845,7 +853,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help copy (id fallback)
+  // Help copy
   var help=$('#helpText') || $('.help');
   if(help){
     help.innerHTML =
