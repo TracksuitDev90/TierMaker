@@ -49,6 +49,7 @@ function live(msg){ var n=$('#live'); if(!n) return; n.textContent=''; setTimeou
 function vib(ms){ if('vibrate' in navigator) navigator.vibrate(ms||8); }
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
+function debounce(fn, ms){ var t; return function(){ clearTimeout(t); t=setTimeout(fn, ms); }; }
 
 /* ---------- Color helpers ---------- */
 function hexToRgb(hex){ var h=hex.replace('#',''); if(h.length===3){ h=h.split('').map(function(x){return x+x;}).join(''); } var n=parseInt(h,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
@@ -187,7 +188,7 @@ var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.l
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan","Munch","Paper",
-  "Ray","Safoof","V","Temz","TomTom","Versse","Wobbles","Xavier"
+  "Ray","Safoof","Temz","TomTom","V","Verse","Wobbles","Xavier"
 ];
 
 /* ---------- PRE-RENDERED CIRCLE PALETTE (punchier, more variety) ---------- */
@@ -211,17 +212,42 @@ var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0;
 function nextPreset(){ var c = presetPalette[pIndex % presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Size-to-fit helper (UI only) ---------- */
-function fitLabelSize(label, container, base, min){
-  base=base||18; min=min||11;
-  label.style.fontSize=base+'px';
-  label.style.whiteSpace='pre-wrap';
-  var tries=0;
-  while(tries<18 && (label.scrollWidth>container.clientWidth-10 || label.scrollHeight>container.clientHeight-10)){
-    base-=1; if(base<min){ base=min; break; }
-    label.style.fontSize=base+'px'; tries++;
+/* ---------- NEW: Live label fitter (UI) ---------- */
+function fitLiveLabel(lbl){
+  if (!lbl) return;
+  var token = lbl.parentElement;
+  var D = token.clientWidth;           // circle diameter
+  var pad = 10;                        // inner breathing room
+
+  var s = lbl.style;
+  s.whiteSpace = 'nowrap';
+  s.lineHeight = '1';
+  s.display = 'flex';
+  s.alignItems = 'center';
+  s.justifyContent = 'center';
+  s.height = '100%';
+  s.padding = '0 ' + pad + 'px';
+  s.wordBreak = 'normal';
+  s.hyphens = 'none';
+  s.overflow = 'hidden';
+
+  var lo = Math.max(12, Math.floor(D * 0.18));
+  var hi = Math.floor(D * 0.44);
+  var best = lo;
+
+  function fits(px){
+    s.fontSize = px + 'px';
+    return (lbl.scrollWidth <= D - pad * 2) && (lbl.scrollHeight <= D - pad * 2);
   }
+  while (lo <= hi){
+    var mid = (lo + hi) >> 1;
+    if (fits(mid)) { best = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  s.fontSize = best + 'px';
 }
+function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
+on(window,'resize', debounce(refitAllLabels, 120));
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -257,7 +283,8 @@ function buildNameToken(name, color, forceBlack){
   var label = document.createElement('div'); label.className='label'; label.textContent=name;
   label.style.color = forceBlack ? '#111' : contrastColor(color);
   el.appendChild(label);
-  fitLabelSize(label, el);
+  // ⬇️ live single-line fit
+  fitLiveLabel(label);
   return el;
 }
 function buildImageToken(src, alt){
@@ -681,10 +708,9 @@ on($('#undoBtn'),'click', function(){
 /* ===== Export-only label fitter (bigger, perfectly centered, single line) ===== */
 function fitExportLabel(lbl){
   var token = lbl.parentElement;
-  var D = token.clientWidth;    // circle diameter (after export CSS below)
+  var D = token.clientWidth;
   var innerPad = 12;
 
-  // force single line + perfect centering
   lbl.style.whiteSpace = 'nowrap';
   lbl.style.lineHeight = '1';
   lbl.style.display = 'flex';
@@ -693,7 +719,6 @@ function fitExportLabel(lbl){
   lbl.style.height = '100%';
   lbl.style.padding = '0 ' + innerPad + 'px';
 
-  // allow significantly larger type
   var minPx = Math.max(12, Math.floor(D * 0.18));
   var maxPx = Math.floor(D * 0.44);
   var best = minPx;
@@ -723,8 +748,7 @@ on($('#saveBtn'),'click', function(){
   clone.style.width = '1200px';
   clone.style.maxWidth = '1200px';
 
-  // export-only CSS
-  var EXPORT_TOKEN = 144;  // ↑ increase if you want even bigger circles in the PNG
+  var EXPORT_TOKEN = 144;
   var EXPORT_GAP   = 18;
 
   var style = document.createElement('style');
@@ -741,7 +765,7 @@ on($('#saveBtn'),'click', function(){
       box-shadow:none !important;
     }
     .token img{ width:100% !important; height:100% !important; object-fit:cover !important; }
-    .row-del{ display:none !important; } /* hide the row X in the PNG */
+    .row-del{ display:none !important; }
     .token .label{
       font-weight:900 !important;
       display:flex !important; align-items:center !important; justify-content:center !important;
@@ -751,14 +775,12 @@ on($('#saveBtn'),'click', function(){
   `;
   clone.appendChild(style);
 
-  // drop empty title for export
   var title = clone.querySelector('.board-title');
   if (title && title.textContent.replace(/\s+/g,'') === '') {
     var wrap = title.parentElement;
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
-  // fit labels after CSS is attached
   $$('.token .label', clone).forEach(fitExportLabel);
 
   cloneWrap.appendChild(clone);
@@ -812,6 +834,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     if (!name) return;
     tray.appendChild(buildNameToken(name, $('#nameColor').value, false));
     $('#nameInput').value=''; $('#nameColor').value = nextPreset();
+    refitAllLabels();
   });
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
@@ -834,5 +857,6 @@ document.addEventListener('DOMContentLoaded', function start(){
   }
 
   enableClickToPlace(tray);
+  refitAllLabels();
   live('Ready.');
 });
