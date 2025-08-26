@@ -71,6 +71,14 @@ function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(1
 function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
 function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
 function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f)); }
+function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round(c.r+(255-c.r)*f), Math.round(c.g+(255-c.g)*f), Math.round(c.b+(255-c.b)*f)); }
+function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
+  return rgbToHex(
+    Math.round(a.r+(b.r-a.r)*t),
+    Math.round(a.g+(b.g-a.g)*t),
+    Math.round(a.b+(b.b-a.b)*t)
+  );
+}
 
 /* ---------- Theme toggle keeps current styles in sync ---------- */
 (function(){
@@ -85,8 +93,8 @@ function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(M
     var target = mode==='dark' ? 'Light' : 'Dark';
     if(text) text.textContent = target;
     if(icon) icon.innerHTML = (target==='Light'
-      ? '<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
-      : '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
     // re-tint row backgrounds based on label color
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
@@ -100,22 +108,36 @@ function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(M
 /* ---------- Globals ---------- */
 var board=null, tray=null;
 
-/* ---------- Apply max width to tier chips ---------- */
-function applyChipMaxWidth(row){
+/* =========================================================
+   ROW LABEL COLUMN: freeze width + chip clamp + text fit
+========================================================= */
+
+/** Fixed width (px) for the left label column. Adjust if your CSS differs. */
+var LABEL_COL_PX = 168;
+
+/** Apply fixed column width so the left label never grows into the row. */
+function freezeLabelColumn(row){
+  var wrap = row.querySelector('.tier-label');
+  if (!wrap) return;
+  wrap.style.flex = '0 0 ' + LABEL_COL_PX + 'px';
+  wrap.style.width = LABEL_COL_PX + 'px';
+  wrap.style.minWidth = LABEL_COL_PX + 'px';
+  wrap.style.maxWidth = LABEL_COL_PX + 'px';
+  wrap.style.overflow = 'hidden';
+}
+
+/** Clamp the editable chip inside the fixed column and ellipsize if needed. */
+function clampChipWidth(row){
   var wrap = row.querySelector('.tier-label');
   var chip = row.querySelector('.label-chip');
   var handle = row.querySelector('.row-handle');
   var del = row.querySelector('.row-del');
   if (!wrap || !chip) return;
-  var cs = getComputedStyle(wrap);
-  var inner = wrap.clientWidth
-    - (parseFloat(cs.paddingLeft)||0)
-    - (parseFloat(cs.paddingRight)||0);
   var reserve = 0;
   if (handle) reserve += (handle.offsetWidth || 40) + 8;
   if (del)    reserve += (del.offsetWidth    || 40) + 8;
-  var gutter = 16;
-  var max = Math.max(80, Math.floor(inner - reserve - gutter));
+  var gutter = 12;
+  var max = Math.max(60, LABEL_COL_PX - reserve - gutter);
   chip.style.maxWidth = max + 'px';
   chip.style.overflow = 'hidden';
   chip.style.textOverflow = 'ellipsis';
@@ -124,8 +146,66 @@ function applyChipMaxWidth(row){
   chip.style.alignItems='center';
   chip.style.justifyContent='center';
 }
-function applyAllChipMaxWidths(){
-  $$('.tier-row').forEach(applyChipMaxWidth);
+
+/** Big-by-default single-line text that shrinks as user types. */
+function fitChipText(chip){
+  if(!chip) return;
+  var padX = 10;
+  chip.style.whiteSpace='nowrap';
+  chip.style.lineHeight='1';
+  chip.style.display='inline-flex';
+  chip.style.alignItems='center';
+  chip.style.justifyContent='center';
+  chip.style.padding='0 '+padX+'px';
+  chip.style.height='100%';
+  chip.style.wordBreak='normal';
+  chip.style.hyphens='none';
+  chip.style.overflow='hidden';
+  var W = chip.clientWidth || LABEL_COL_PX;
+  var H = chip.clientHeight || 44;
+  var lo = 14, hi = 32, best = hi; // large default
+  function fits(px){
+    chip.style.fontSize = px+'px';
+    return chip.scrollWidth <= (W) && chip.scrollHeight <= (H);
+  }
+  while(lo<=hi){
+    var mid=(lo+hi)>>1;
+    if(fits(mid)){ best=mid; lo=mid+1; } else { hi=mid-1; }
+  }
+  chip.style.fontSize = best+'px';
+}
+
+/** Apply width & text fitting to all rows. */
+function enforceLabelLayout(row){
+  freezeLabelColumn(row);
+  clampChipWidth(row);
+  fitChipText(row.querySelector('.label-chip'));
+}
+function enforceAllLabelLayouts(){
+  $$('.tier-row').forEach(enforceLabelLayout);
+}
+
+/* ---------- FLIP animation helper ---------- */
+function flipZones(zones, mutate){
+  var prev=new Map();
+  zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
+  mutate();
+  requestAnimationFrame(function(){
+    zones.forEach(function(z){
+      $$('.token',z).forEach(function(t){
+        var r2=t.getBoundingClientRect(), r1=prev.get(t); if(!r1) return;
+        var dx=r1.left-r2.left, dy=r1.top-r2.top;
+        if(dx||dy){
+          t.classList.add('flip-anim');
+          t.style.transform='translate('+dx+'px,'+dy+'px)';
+          requestAnimationFrame(function(){
+            t.style.transform='translate(0,0)';
+            setTimeout(function(){ t.classList.remove('flip-anim'); t.style.transform=''; },220);
+          });
+        }
+      });
+    });
+  });
 }
 
 /* ---------- Row DOM ---------- */
@@ -159,7 +239,7 @@ function buildRowDom(){
   drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
 
   row.appendChild(labelWrap); row.appendChild(drop);
-  return { row: row, chip: chip, del: del, drop: drop, handle: handle };
+  return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
 }
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
@@ -189,7 +269,7 @@ function createRow(cfg){
   drop.style.background = tint; drop.dataset.manual = 'false';
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', function(){ applyChipMaxWidth(node); queueAutosave(); });
+  on(chip,'input', function(){ clampChipWidth(node); fitChipText(chip); queueAutosave(); });
 
   on(del,'click', function(){
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
@@ -197,15 +277,14 @@ function createRow(cfg){
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions(); queueAutosave();
-    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); // simple restore via HTML
-    updateUndo();
+    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); updateUndo();
   });
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
 
-  // clamp the editable chip’s width so it never pushes into the row
-  applyChipMaxWidth(node);
+  // Freeze left column + clamp + fit text right away
+  enforceLabelLayout(node);
 
   return node;
 }
@@ -230,7 +309,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette (already tuned earlier) ---------- */
+/* ---------- Palette (unchanged) ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -252,7 +331,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Live label fitter (no wraps, centered) ---------- */
+/* ---------- Token label fitter (no wraps, centered) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -269,7 +348,10 @@ function fitLiveLabel(lbl){
   s.fontSize=best+'px';
 }
 function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
-on(window,'resize', debounce(function(){ refitAllLabels(); applyAllChipMaxWidths(); }, 120));
+on(window,'resize', debounce(function(){
+  refitAllLabels();
+  enforceAllLabelLayouts();
+}, 120));
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -347,10 +429,8 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = []; // heterogeneous: {type:'move', ...} | {type:'row',...} | {type:'row-delete', html}
+var historyStack = []; // heterogeneous
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
-
-/* snapshot before a move (for reorders) */
 function snapshotBefore(node){
   var parent = node.parentElement;
   var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
@@ -360,8 +440,6 @@ function snapshotBefore(node){
     fromBeforeId: fromBefore
   };
 }
-
-/* generic token move (records moves & reorders) */
 function moveToken(node, toZone, beforeTok){
   var snap = snapshotBefore(node);
   var toId = toZone.id || (toZone.id=uid());
@@ -380,8 +458,6 @@ function moveToken(node, toZone, beforeTok){
   });
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
 }
-
-/* perform a move into a parent before an element id (or append) */
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
   if(!item||!parent) return;
@@ -393,14 +469,11 @@ function performMoveTo(itemId, parentId, beforeId){
     parent.appendChild(item);
   });
 }
-
-/* UNDO */
 on($('#undoBtn'),'click', function(){
   var last = historyStack.pop(); if (!last) return;
   if (last.type==='move'){
     performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
   } else if (last.type==='row'){
-    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
@@ -409,17 +482,15 @@ on($('#undoBtn'),'click', function(){
       else container.appendChild(r);
     }
   } else if (last.type==='row-delete'){
-    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
       var row=tmp.firstElementChild;
       container.appendChild(row);
-      // rewire the row we just injected
       var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', function(){ applyChipMaxWidth(row); queueAutosave(); });
+      on(chip,'input', function(){ clampChipWidth(row); fitChipText(chip); queueAutosave(); });
       on(del,'click', function(){
         if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
         var tokens = $$('.token', drop);
@@ -427,8 +498,7 @@ on($('#undoBtn'),'click', function(){
         row.remove(); refreshRadialOptions(); queueAutosave();
         historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
       });
-      // clamp width for restored row
-      applyChipMaxWidth(row);
+      enforceLabelLayout(row);
     }
   }
   updateUndo(); queueAutosave();
@@ -502,7 +572,6 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
-        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -525,6 +594,11 @@ function enablePointerDrag(node){
       currentZone = zone || null;
     }
   });
+}
+
+/* ---------- Legacy mouse/touch fallback (desktop) ---------- */
+function enableMouseTouchDragFallback(node){
+  on(node,'mousedown', function(e){ e.preventDefault(); });
 }
 
 /* ---------- Mobile touch drag (placed tokens) ---------- */
@@ -568,10 +642,7 @@ function enableMobileTouchDrag(node){
 function enableRowReorder(handle, row){
   var placeholder=null, originNext=null;
 
-  function arm(e){
-    row.setAttribute('draggable','true');
-    originNext = row.nextElementSibling;
-  }
+  function arm(){ row.setAttribute('draggable','true'); originNext = row.nextElementSibling; }
   on(handle,'mousedown', arm);
   on(handle,'touchstart', arm, _supportsPassive?{passive:true}:false);
 
@@ -593,7 +664,6 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
-    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -638,17 +708,16 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
-  var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
+  var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
+  var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max((stepDeg*Math.PI/180)/2,0.05)));
   var R=Math.max(BASE_R, need);
-  var center=uniformCenter(cx,cy,R);
+  var c=uniformCenter(cx,cy,R);
 
   radialOpts.innerHTML = '';
   for (var i=0;i<N;i++){
     var ang=(degStart+stepDeg*i)*Math.PI/180;
-    var x=center.x+R*Math.cos(ang), y=center.y+R*Math.sin(ang);
+    var x=c.x+R*Math.cos(ang), y=c.y+R*Math.sin(ang);
     var row = rows[i];
-
     var btn=document.createElement('button'); btn.type='button'; btn.className='radial-option';
     btn.style.left = x+'px'; btn.style.top  = y+'px';
     var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[i];
@@ -681,7 +750,6 @@ function closeRadial(){
   radial.classList.remove('visible');
   radial.setAttribute('aria-hidden','true');
   radialForToken = null;
-  _radialGeo = [];
 }
 on(window,'resize', refreshRadialOptions);
 
@@ -692,9 +760,11 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT: exact on-screen sizes ---------- */
+/* =========================================================
+   EXPORT: capture exactly what’s on screen (mobile + desktop)
+   - Freezes label column widths inside the clone too.
+========================================================= */
 (function(){
-  // feedback overlay (injected)
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -703,36 +773,70 @@ on($('#trashClear'),'click', function(){
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
   on($('#saveBtn'),'click', function(){
-    // check library
     if (typeof html2canvas !== 'function'){
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
-    // tidy UI
     closeRadial();
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
-    // clone the *board panel* exactly as-is (no size/label changes)
     var panel = $('#boardPanel');
     var cloneWrap = document.createElement('div');
     cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
 
     var clone = panel.cloneNode(true);
-    // hide delete X only
+
+    // Hide delete X in the capture
     var s = document.createElement('style');
-    s.textContent='.row-del{display:none !important;}';
+    s.textContent='.row-del{display:none!important;}';
     clone.appendChild(s);
 
-    // drop empty title
+    // Drop empty title
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
-      var wrap = title.parentElement;
-      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
     }
 
-    // keep widths/height as on page
-    const width = clone.scrollWidth;
-    const height = clone.scrollHeight;
+    // Freeze label column widths inside the clone to match live rows
+    var liveRows = $$('.tier-row', panel);
+    var cloneRows = $$('.tier-row', clone);
+    for (var i=0;i<cloneRows.length;i++){
+      var live = liveRows[i], cr = cloneRows[i];
+      if (!live || !cr) continue;
+      var liveWrap = live.querySelector('.tier-label');
+      var w = (liveWrap ? liveWrap.getBoundingClientRect().width : LABEL_COL_PX);
+      var wrap = cr.querySelector('.tier-label');
+      if (wrap){
+        wrap.style.flex = '0 0 '+w+'px';
+        wrap.style.width = w+'px';
+        wrap.style.minWidth = w+'px';
+        wrap.style.maxWidth = w+'px';
+        wrap.style.overflow = 'hidden';
+        // also clamp chip in clone
+        var chip = wrap.querySelector('.label-chip');
+        if (chip){
+          var handle = wrap.querySelector('.row-handle');
+          var del = wrap.querySelector('.row-del');
+          var reserve = 0;
+          if (handle) reserve += (handle.offsetWidth || 40) + 8;
+          if (del)    reserve += (del.offsetWidth    || 40) + 8;
+          var max = Math.max(60, w - reserve - 12);
+          chip.style.maxWidth = max+'px';
+          chip.style.whiteSpace='nowrap';
+          chip.style.textOverflow='ellipsis';
+          chip.style.overflow='hidden';
+          chip.style.display='inline-flex';
+          chip.style.alignItems='center';
+          chip.style.justifyContent='center';
+        }
+      }
+    }
+
+    // Size the clone to the real scroll area so mobile == desktop
+    var targetW = panel.scrollWidth;
+    var targetH = panel.scrollHeight;
+    clone.style.width = targetW + 'px';
+    clone.style.height = targetH + 'px';
 
     cloneWrap.appendChild(clone);
     document.body.appendChild(cloneWrap);
@@ -742,10 +846,10 @@ on($('#trashClear'),'click', function(){
       backgroundColor: cssVar('--surface') || null,
       useCORS: true,
       scale: 2,
-      width: width,
-      height: height,
-      windowWidth: width,
-      windowHeight: height
+      width: targetW,
+      height: targetH,
+      windowWidth: targetW,
+      windowHeight: targetH
     }).then(function(canvas){
       var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
@@ -761,7 +865,6 @@ on($('#trashClear'),'click', function(){
   var colorInput = $('#nameColor');
   var preview = $('#colorPreview');
   if (!preview) {
-    // try to find a sibling; if not, create a little ring preview
     var addBtn = $('#addNameBtn');
     preview=document.createElement('span'); preview.id='colorPreview';
     preview.setAttribute('aria-hidden','true');
@@ -777,7 +880,6 @@ on($('#trashClear'),'click', function(){
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
   var state={ rows:[], tray:[], version:1 };
-  // rows & tokens
   $$('.tier-row').forEach(function(r){
     var chip=$('.label-chip',r);
     var entry={ label: chip.textContent, color: chip.dataset.color || '#8b7dff', items: [] };
@@ -790,7 +892,6 @@ function serializeState(){
     });
     state.rows.push(entry);
   });
-  // tray tokens
   $$('#tray .token').forEach(function(tok){
     if (tok.querySelector('img')){
       state.tray.push({t:'i', src: tok.querySelector('img').src});
@@ -812,14 +913,13 @@ function restoreState(state){
       else drop.appendChild(buildNameToken(it.text, it.color, true));
     });
   });
-  // tray
   $('#tray').innerHTML='';
   (state.tray||[]).forEach(function(it){
     if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
     else tray.appendChild(buildNameToken(it.text, it.color, true));
   });
   refitAllLabels();
-  applyAllChipMaxWidths();
+  enforceAllLabelLayouts();
   return true;
 }
 function queueAutosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState())); }catch(_){ } }
@@ -836,37 +936,32 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   board = $('#tierBoard'); tray = $('#tray');
 
-  // Try restore
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
     announce('Restored your last session.'); 
   } else {
-    // build defaults
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
-  // add tier
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
-    applyAllChipMaxWidths();
+    enforceAllLabelLayouts();
   });
 
-  // add custom name
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value; // capture before resetting
+    var chosen = colorInput.value;
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
-    colorInput.value = nextPreset(); // rotate to another good color
+    colorInput.value = nextPreset();
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
-    refitAllLabels(); applyAllChipMaxWidths(); queueAutosave();
+    refitAllLabels(); enforceAllLabelLayouts(); queueAutosave();
   });
 
-  // add images
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
@@ -876,7 +971,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help (a11y: announceable)
+  // Device-specific tips
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
@@ -888,13 +983,8 @@ document.addEventListener('DOMContentLoaded', function start(){
       '<br><strong>Rows:</strong> click the tier label to edit. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
   }
 
-  // click-to-place from tray
   enableClickToPlace(tray);
-
-  // initial clamps
-  applyAllChipMaxWidths();
+  enforceAllLabelLayouts();
   refitAllLabels();
-
-  // announce ready
   announce('Ready.');
 });
