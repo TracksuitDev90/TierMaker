@@ -71,14 +71,6 @@ function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(1
 function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
 function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
 function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f)); }
-function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round(c.r+(255-c.r)*f), Math.round(c.g+(255-c.g)*f), Math.round(c.b+(255-c.b)*f)); }
-function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
-  return rgbToHex(
-    Math.round(a.r+(b.r-a.r)*t),
-    Math.round(a.g+(b.g-a.g)*t),
-    Math.round(a.b+(b.b-a.b)*t)
-  );
-}
 
 /* ---------- Theme toggle keeps current styles in sync ---------- */
 (function(){
@@ -93,8 +85,9 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
     var target = mode==='dark' ? 'Light' : 'Dark';
     if(text) text.textContent = target;
     if(icon) icon.innerHTML = (target==='Light'
-      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
-      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
+      ? '<svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
+      : '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
+    // re-tint row backgrounds based on label color
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
       if (drop && drop.dataset.manual!=='true'){
@@ -107,97 +100,33 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 /* ---------- Globals ---------- */
 var board=null, tray=null;
 
-/* ---------- FLIP animation helper ---------- */
-function flipZones(zones, mutate){
-  var prev=new Map();
-  zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
-  mutate();
-  requestAnimationFrame(function(){
-    zones.forEach(function(z){
-      $$('.token',z).forEach(function(t){
-        var r2=t.getBoundingClientRect(), r1=prev.get(t); if(!r1) return;
-        var dx=r1.left-r2.left, dy=r1.top-r2.top;
-        if(dx||dy){
-          t.classList.add('flip-anim');
-          t.style.transform='translate('+dx+'px,'+dy+'px)';
-          requestAnimationFrame(function(){
-            t.style.transform='translate(0,0)';
-            setTimeout(function(){ t.classList.remove('flip-anim'); t.style.transform=''; },220);
-          });
-        }
-      });
-    });
-  });
+/* ---------- Apply max width to tier chips ---------- */
+function applyChipMaxWidth(row){
+  var wrap = row.querySelector('.tier-label');
+  var chip = row.querySelector('.label-chip');
+  var handle = row.querySelector('.row-handle');
+  var del = row.querySelector('.row-del');
+  if (!wrap || !chip) return;
+  var cs = getComputedStyle(wrap);
+  var inner = wrap.clientWidth
+    - (parseFloat(cs.paddingLeft)||0)
+    - (parseFloat(cs.paddingRight)||0);
+  var reserve = 0;
+  if (handle) reserve += (handle.offsetWidth || 40) + 8;
+  if (del)    reserve += (del.offsetWidth    || 40) + 8;
+  var gutter = 16;
+  var max = Math.max(80, Math.floor(inner - reserve - gutter));
+  chip.style.maxWidth = max + 'px';
+  chip.style.overflow = 'hidden';
+  chip.style.textOverflow = 'ellipsis';
+  chip.style.whiteSpace = 'nowrap';
+  chip.style.display='inline-flex';
+  chip.style.alignItems='center';
+  chip.style.justifyContent='center';
 }
-
-/* =======================================================================
-   Tier label fitting (ONLY affects S/A/B/C/D chips)
-   - Fixed, wider label column
-   - Reserve space for handle + delete + gutter (so it never overlaps row)
-   - Large defaults for 1–2 chars; shrink as text grows; wrapping allowed
-   ======================================================================= */
-var CHIP_PAD = 12;            // internal padding inside the colored chip
-var CHIP_W_DESK = 188;        // label column width desktop
-var CHIP_W_MOB  = 172;        // label column width mobile
-var CHIP_GUTTER_RIGHT = 14;   // space between label column and row
-var HANDLE_W = 22;            // approx handle button width
-var DEL_W    = 28;            // approx delete button width
-function chipWidth(){ return isSmall() ? CHIP_W_MOB : CHIP_W_DESK; }
-
-function fitTierChip(chip){
-  if (!chip) return;
-  var wrap = chip.parentElement; // .tier-label
-
-  // fixed column width + visible gutter so it never intrudes into the row
-  var full = chipWidth();
-  wrap.style.width    = full + 'px';
-  wrap.style.minWidth = full + 'px';
-  wrap.style.maxWidth = full + 'px';
-  wrap.style.marginRight = CHIP_GUTTER_RIGHT + 'px';
-
-  // available width for the colored chip itself
-  var avail = Math.max(60, full - HANDLE_W - DEL_W - 8); // minus controls + a little spacing
-  chip.style.maxWidth = avail + 'px';
-  chip.style.flex = '0 0 auto';
-
-  // center text perfectly
-  var s = chip.style;
-  s.display='flex';
-  s.alignItems='center';
-  s.justifyContent='center';
-  s.textAlign='center';
-  s.boxSizing='border-box';
-  s.padding = '0 ' + CHIP_PAD + 'px';
-  s.whiteSpace='normal';
-  s.wordBreak='break-word';
-  s.hyphens='auto';
-  s.lineHeight='1';
-
-  // large defaults that shrink with length buckets
-  var len = (chip.textContent || '').trim().length || 1;
-  var base;
-  if (len <= 1) base = 64;           // BIG default letter
-  else if (len === 2) base = 52;
-  else if (len === 3) base = 38;
-  else if (len === 4) base = 32;
-  else if (len === 5) base = 28;
-  else if (len <= 7) base = 24;      // 6–7
-  else if (len <= 10) base = 20;     // 8–10
-  else base = 18;                    // 11+
-
-  var min = 12;
-  function fits(px){
-    s.fontSize = px + 'px';
-    return chip.scrollWidth <= (avail - CHIP_PAD*2 + 0.5);
-  }
-  var lo=min, hi=base, best=lo;
-  while (lo <= hi){
-    var mid=(lo+hi)>>1;
-    if (fits(mid)){ best=mid; lo=mid+1; } else { hi=mid-1; }
-  }
-  s.fontSize = best + 'px';
+function applyAllChipMaxWidths(){
+  $$('.tier-row').forEach(applyChipMaxWidth);
 }
-function refitAllTierChips(){ $$('.label-chip').forEach(fitTierChip); }
 
 /* ---------- Row DOM ---------- */
 function buildRowDom(){
@@ -230,7 +159,7 @@ function buildRowDom(){
   drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
 
   row.appendChild(labelWrap); row.appendChild(drop);
-  return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
+  return { row: row, chip: chip, del: del, drop: drop, handle: handle };
 }
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
@@ -248,7 +177,7 @@ function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; retu
 /* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
-  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap = dom.labelWrap;
+  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle;
 
   chip.textContent = cfg.label;
   chip.dataset.color = cfg.color;
@@ -256,19 +185,11 @@ function createRow(cfg){
   chip.style.color = contrastColor(cfg.color);
   del.style.background = darken(cfg.color, 0.35);
 
-  // fixed column + gutter + initial fit
-  var full = chipWidth();
-  labelWrap.style.width = full + 'px';
-  labelWrap.style.minWidth = full + 'px';
-  labelWrap.style.maxWidth = full + 'px';
-  labelWrap.style.marginRight = CHIP_GUTTER_RIGHT + 'px';
-  fitTierChip(chip);
-
   var tint = tintFrom(cfg.color);
   drop.style.background = tint; drop.dataset.manual = 'false';
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', function(){ fitTierChip(chip); queueAutosave(); });
+  on(chip,'input', function(){ applyChipMaxWidth(node); queueAutosave(); });
 
   on(del,'click', function(){
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
@@ -276,12 +197,16 @@ function createRow(cfg){
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions(); queueAutosave();
-    historyStack.push({type:'row-delete', rowHTML: node.outerHTML});
+    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); // simple restore via HTML
     updateUndo();
   });
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
+
+  // clamp the editable chip’s width so it never pushes into the row
+  applyChipMaxWidth(node);
+
   return node;
 }
 
@@ -305,7 +230,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette (unchanged) ---------- */
+/* ---------- Palette (already tuned earlier) ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -327,7 +252,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Live label fitter for TOKENS (unchanged) ---------- */
+/* ---------- Live label fitter (no wraps, centered) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -344,7 +269,7 @@ function fitLiveLabel(lbl){
   s.fontSize=best+'px';
 }
 function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
-on(window,'resize', debounce(function(){ refitAllLabels(); refitAllTierChips(); }, 120));
+on(window,'resize', debounce(function(){ refitAllLabels(); applyAllChipMaxWidths(); }, 120));
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -352,6 +277,7 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
+  // keyboard: Alt+←/→ reorder within row, Alt+↑/↓ move to prev/next row
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -421,8 +347,10 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = [];
+var historyStack = []; // heterogeneous: {type:'move', ...} | {type:'row',...} | {type:'row-delete', html}
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
+
+/* snapshot before a move (for reorders) */
 function snapshotBefore(node){
   var parent = node.parentElement;
   var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
@@ -432,6 +360,8 @@ function snapshotBefore(node){
     fromBeforeId: fromBefore
   };
 }
+
+/* generic token move (records moves & reorders) */
 function moveToken(node, toZone, beforeTok){
   var snap = snapshotBefore(node);
   var toId = toZone.id || (toZone.id=uid());
@@ -450,6 +380,8 @@ function moveToken(node, toZone, beforeTok){
   });
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
 }
+
+/* perform a move into a parent before an element id (or append) */
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
   if(!item||!parent) return;
@@ -461,11 +393,14 @@ function performMoveTo(itemId, parentId, beforeId){
     parent.appendChild(item);
   });
 }
+
+/* UNDO */
 on($('#undoBtn'),'click', function(){
   var last = historyStack.pop(); if (!last) return;
   if (last.type==='move'){
     performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
   } else if (last.type==='row'){
+    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
@@ -474,21 +409,17 @@ on($('#undoBtn'),'click', function(){
       else container.appendChild(r);
     }
   } else if (last.type==='row-delete'){
+    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
       var row=tmp.firstElementChild;
       container.appendChild(row);
-      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row), labelWrap=$('.tier-label',row);
-      var full = chipWidth();
-      labelWrap.style.width = full + 'px';
-      labelWrap.style.minWidth = full + 'px';
-      labelWrap.style.maxWidth = full + 'px';
-      labelWrap.style.marginRight = CHIP_GUTTER_RIGHT + 'px';
-      fitTierChip(chip);
+      // rewire the row we just injected
+      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', function(){ fitTierChip(chip); queueAutosave(); });
+      on(chip,'input', function(){ applyChipMaxWidth(row); queueAutosave(); });
       on(del,'click', function(){
         if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
         var tokens = $$('.token', drop);
@@ -496,6 +427,8 @@ on($('#undoBtn'),'click', function(){
         row.remove(); refreshRadialOptions(); queueAutosave();
         historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
       });
+      // clamp width for restored row
+      applyChipMaxWidth(row);
     }
   }
   updateUndo(); queueAutosave();
@@ -569,6 +502,7 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
+        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -591,11 +525,6 @@ function enablePointerDrag(node){
       currentZone = zone || null;
     }
   });
-}
-
-/* ---------- Legacy mouse/touch fallback (desktop) ---------- */
-function enableMouseTouchDragFallback(node){
-  on(node,'mousedown', function(e){ e.preventDefault(); });
 }
 
 /* ---------- Mobile touch drag (placed tokens) ---------- */
@@ -664,6 +593,7 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
+    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -689,7 +619,6 @@ var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
-var _radialGeo = [];
 
 function rowCount(){ return $$('.tier-row').length; }
 function uniformCenter(cx, cy, R){
@@ -714,36 +643,18 @@ function openRadial(token){
   var R=Math.max(BASE_R, need);
   var center=uniformCenter(cx,cy,R);
 
-  var positions=[];
+  radialOpts.innerHTML = '';
   for (var i=0;i<N;i++){
     var ang=(degStart+stepDeg*i)*Math.PI/180;
-    positions.push({ i:i, x:center.x+R*Math.cos(ang), y:center.y+R*Math.sin(ang) });
-  }
-  positions.sort(function(a,b){ return a.x - b.x; });
-  _radialGeo = [];
+    var x=center.x+R*Math.cos(ang), y=center.y+R*Math.sin(ang);
+    var row = rows[i];
 
-  radialCloseBtn.style.left = cx+'px';
-  radialCloseBtn.style.top  = cy+'px';
-
-  radialOpts.innerHTML = '';
-  for (let j=0;j<N;j++){
-    (function(j){
-      var row = rows[j];
-      var pos = positions[j];
-      var btn = document.createElement('button');
-      btn.type='button'; btn.className='radial-option';
-      btn.style.left = pos.x+'px';
-      btn.style.top  = pos.y+'px';
-      btn.style.transitionDelay = (j*14)+'ms';
-      var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
-
-      on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
-      on(btn,'pointerleave', function(){ btn.classList.remove('is-hot'); });
-      on(btn,'pointerdown', function(e){ e.preventDefault(); });
-      on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
-      radialOpts.appendChild(btn);
-      _radialGeo.push({row:row, btn:btn});
-    })(j);
+    var btn=document.createElement('button'); btn.type='button'; btn.className='radial-option';
+    btn.style.left = x+'px'; btn.style.top  = y+'px';
+    var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[i];
+    btn.appendChild(dot);
+    (function(r){ on(btn,'click', function(){ moveToken(radialForToken, r.querySelector('.tier-drop'), null); closeRadial(); }); })(row);
+    radialOpts.appendChild(btn);
   }
 
   function backdrop(ev){
@@ -759,19 +670,18 @@ function openRadial(token){
   radial.addEventListener('pointerdown',backdrop,{passive:false});
   radial._backdropHandler=backdrop;
 
-  radial.classList.remove('hidden');
-  radial.classList.add('visible','show');
+  radial.classList.remove('hidden'); radial.classList.add('visible');
   radial.setAttribute('aria-hidden','false');
-  setTimeout(function(){ radial.classList.remove('show'); }, 160 + N*14);
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
 function closeRadial(){
   if(!radial) return;
   if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden');
-  radial.classList.remove('visible','show');
+  radial.classList.remove('visible');
   radial.setAttribute('aria-hidden','true');
-  radialForToken = null; _radialGeo = [];
+  radialForToken = null;
+  _radialGeo = [];
 }
 on(window,'resize', refreshRadialOptions);
 
@@ -782,8 +692,9 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT: exact on-screen sizes + centered tier labels ---------- */
+/* ---------- EXPORT: exact on-screen sizes ---------- */
 (function(){
+  // feedback overlay (injected)
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -792,61 +703,56 @@ on($('#trashClear'),'click', function(){
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
   on($('#saveBtn'),'click', function(){
+    // check library
     if (typeof html2canvas !== 'function'){
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
+    // tidy UI
+    closeRadial();
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
+    // clone the *board panel* exactly as-is (no size/label changes)
     var panel = $('#boardPanel');
     var cloneWrap = document.createElement('div');
     cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
 
     var clone = panel.cloneNode(true);
-    clone.style.width = panel.getBoundingClientRect().width + 'px';
-
-    // export-only CSS: keep widths consistent and hard-center tier text
+    // hide delete X only
     var s = document.createElement('style');
-    s.textContent = `
-      .row-del{display:none !important;}
-      .tier-label{
-        width:${chipWidth()}px !important;
-        min-width:${chipWidth()}px !important;
-        max-width:${chipWidth()}px !important;
-        margin-right:${CHIP_GUTTER_RIGHT}px !important;
-      }
-      .label-chip{
-        max-width:${Math.max(60, chipWidth()-HANDLE_W-DEL_W-8)}px !important;
-        display:flex !important; align-items:center !important; justify-content:center !important;
-        line-height:1 !important; white-space:normal !important; word-break:break-word !important;
-        padding:0 ${CHIP_PAD}px !important; height:100% !important;
-      }
-    `;
+    s.textContent='.row-del{display:none !important;}';
     clone.appendChild(s);
 
+    // drop empty title
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
-      var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      var wrap = title.parentElement;
+      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
     }
 
-    cloneWrap.appendChild(clone); document.body.appendChild(cloneWrap);
+    // keep widths/height as on page
+    const width = clone.scrollWidth;
+    const height = clone.scrollHeight;
+
+    cloneWrap.appendChild(clone);
+    document.body.appendChild(cloneWrap);
     overlay.style.display='flex';
 
     html2canvas(clone, {
       backgroundColor: cssVar('--surface') || null,
       useCORS: true,
       scale: 2,
-      width: clone.getBoundingClientRect().width,
-      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0)
+      width: width,
+      height: height,
+      windowWidth: width,
+      windowHeight: height
     }).then(function(canvas){
       var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
-      cloneWrap.remove();
     }).catch(function(err){
       console.error('Export failed', err);
       alert('Sorry, something went wrong while exporting.');
-      cloneWrap.remove();
-    }).finally(function(){ overlay.style.display='none'; });
+    }).finally(function(){ cloneWrap.remove(); overlay.style.display='none'; });
   });
 })();
 
@@ -855,6 +761,7 @@ on($('#trashClear'),'click', function(){
   var colorInput = $('#nameColor');
   var preview = $('#colorPreview');
   if (!preview) {
+    // try to find a sibling; if not, create a little ring preview
     var addBtn = $('#addNameBtn');
     preview=document.createElement('span'); preview.id='colorPreview';
     preview.setAttribute('aria-hidden','true');
@@ -870,6 +777,7 @@ on($('#trashClear'),'click', function(){
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
   var state={ rows:[], tray:[], version:1 };
+  // rows & tokens
   $$('.tier-row').forEach(function(r){
     var chip=$('.label-chip',r);
     var entry={ label: chip.textContent, color: chip.dataset.color || '#8b7dff', items: [] };
@@ -882,7 +790,8 @@ function serializeState(){
     });
     state.rows.push(entry);
   });
-  $('#tray .token') && $$('#tray .token').forEach(function(tok){
+  // tray tokens
+  $$('#tray .token').forEach(function(tok){
     if (tok.querySelector('img')){
       state.tray.push({t:'i', src: tok.querySelector('img').src});
     } else {
@@ -903,12 +812,14 @@ function restoreState(state){
       else drop.appendChild(buildNameToken(it.text, it.color, true));
     });
   });
+  // tray
   $('#tray').innerHTML='';
   (state.tray||[]).forEach(function(it){
     if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
     else tray.appendChild(buildNameToken(it.text, it.color, true));
   });
-  refitAllLabels(); refitAllTierChips();
+  refitAllLabels();
+  applyAllChipMaxWidths();
   return true;
 }
 function queueAutosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState())); }catch(_){ } }
@@ -925,31 +836,37 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   board = $('#tierBoard'); tray = $('#tray');
 
+  // Try restore
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
     announce('Restored your last session.'); 
   } else {
+    // build defaults
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
+  // add tier
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
+    applyAllChipMaxWidths();
   });
 
+  // add custom name
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value;
+    var chosen = colorInput.value; // capture before resetting
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
-    colorInput.value = nextPreset();
+    colorInput.value = nextPreset(); // rotate to another good color
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
-    refitAllLabels(); queueAutosave();
+    refitAllLabels(); applyAllChipMaxWidths(); queueAutosave();
   });
 
+  // add images
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
@@ -959,10 +876,25 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
+  // Help (a11y: announceable)
+  var help=$('#helpText') || $('.help');
+  if(help){
+    help.setAttribute('role','note');
+    help.setAttribute('aria-live','polite');
+    help.innerHTML =
+      (isSmall()
+       ? '<strong>Phone:</strong> tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
+       : '<strong>Desktop/iPad:</strong> drag circles into rows. Reorder by dragging items or use Alt+Arrow keys. Drag the handle to reorder rows.') +
+      '<br><strong>Rows:</strong> click the tier label to edit. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
+  }
+
+  // click-to-place from tray
   enableClickToPlace(tray);
 
-  announce('Ready.');
-  updateUndo();
+  // initial clamps
+  applyAllChipMaxWidths();
   refitAllLabels();
-  refitAllTierChips();
+
+  // announce ready
+  announce('Ready.');
 });
