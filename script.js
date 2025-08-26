@@ -131,6 +131,67 @@ function flipZones(zones, mutate){
   });
 }
 
+/* ---------- Tier label fitting (ONLY affects S/A/B/C/D chips) ---------- */
+/* We keep the label column a fixed (wider) width. Label text starts huge and
+   shrinks as characters increase; it can wrap, but the column never grows wider. */
+var CHIP_PAD = 12;                         // inner padding used for fit calc
+var CHIP_W_DESK = 188;                     // wider column on desktop
+var CHIP_W_MOB  = 172;                     // slightly narrower on mobile
+function chipWidth(){ return isSmall() ? CHIP_W_MOB : CHIP_W_DESK; }
+
+/* Choose a large starting size based on character count, then shrink until it fits. */
+function fitTierChip(chip){
+  if (!chip) return;
+  var wrap = chip.parentElement; // .tier-label
+  // fix the column width so the chip never expands horizontally
+  var w = chipWidth();
+  wrap.style.width    = w + 'px';
+  wrap.style.minWidth = w + 'px';
+  wrap.style.maxWidth = w + 'px';
+
+  // flex center the text perfectly
+  var s = chip.style;
+  s.display='flex';
+  s.alignItems='center';
+  s.justifyContent='center';
+  s.textAlign='center';
+  s.boxSizing='border-box';
+  s.padding = '0 ' + CHIP_PAD + 'px';
+  s.whiteSpace='normal';        // allow wrapping
+  s.wordBreak='break-word';
+  s.hyphens='auto';
+  s.lineHeight='1.0';
+
+  // big default, then scale down with length buckets
+  var len = (chip.textContent || '').trim().length || 1;
+  var base;
+  if (len <= 1) base = 48;           // S
+  else if (len === 2) base = 40;
+  else if (len === 3) base = 34;
+  else if (len === 4) base = 30;
+  else if (len === 5) base = 26;
+  else if (len <= 7) base = 22;      // 6–7
+  else if (len <= 10) base = 19;     // 8–10
+  else base = 17;                    // 11+
+
+  // now shrink until no horizontal overflow
+  var min = 12;
+  function fits(px){
+    s.fontSize = px + 'px';
+    // force a layout read to check overflow
+    return chip.scrollWidth <= (w - CHIP_PAD*2 + 0.5);
+  }
+  var lo=min, hi=base, best=lo;
+  while (lo <= hi){
+    var mid=(lo+hi)>>1;
+    if (fits(mid)){ best=mid; lo=mid+1; } else { hi=mid-1; }
+  }
+  s.fontSize = best + 'px';
+}
+
+/* Refit all tier chips (call on resize) */
+function refitAllTierChips(){ $$('.label-chip').forEach(fitTierChip); }
+
 /* ---------- Row DOM ---------- */
 function buildRowDom(){
   var row=document.createElement('div'); row.className='tier-row'; row.id=uid();
@@ -162,7 +223,7 @@ function buildRowDom(){
   drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
 
   row.appendChild(labelWrap); row.appendChild(drop);
-  return { row: row, chip: chip, del: del, drop: drop, handle: handle };
+  return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
 }
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
@@ -177,88 +238,10 @@ function tintFrom(color){
 }
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
-/* ---------- Tier-label sizing (NEW) ---------- */
-/* 1) Keep the chip’s native width (never grows horizontally).
-   2) Auto-size the chip’s text so long labels shrink and can wrap.
-   3) Chip may grow vertically; stays centered. */
-function setChipWidthClamp(row){
-  var wrap = row.querySelector('.tier-label');
-  var chip = row.querySelector('.label-chip');
-  var handle = row.querySelector('.row-handle');
-  var del = row.querySelector('.row-del');
-  if (!wrap || !chip) return;
-
-  // 1) remember native width the very first time
-  if (!chip.dataset.nativeW) {
-    chip.dataset.nativeW = String(Math.max(80, Math.round(chip.getBoundingClientRect().width || 120)));
-  }
-  var nativeW = parseFloat(chip.dataset.nativeW);
-
-  // Available inner width of the labelWrap minus handle/del + gutter
-  var cs = getComputedStyle(wrap);
-  var inner = wrap.clientWidth
-    - (parseFloat(cs.paddingLeft)||0)
-    - (parseFloat(cs.paddingRight)||0);
-
-  var reserve = 0;
-  if (handle) reserve += (handle.offsetWidth || 40) + 8;
-  if (del)    reserve += (del.offsetWidth    || 40) + 8;
-
-  var gutter = 16;
-  var allowed = Math.max(80, inner - reserve - gutter);
-
-  // Final fixed width: keep native unless layout forces us smaller
-  var finalW = Math.min(nativeW, allowed);
-  chip.style.width = finalW + 'px';
-  chip.style.maxWidth = finalW + 'px';
-}
-
-function fitTierLabelText(chip){
-  if (!chip) return;
-
-  // allow wrapping; center; let height expand
-  chip.style.whiteSpace = 'normal';
-  chip.style.wordBreak  = 'break-word';
-  chip.style.hyphens    = 'auto';
-  chip.style.textAlign  = 'center';
-  chip.style.lineHeight = '1.05';
-  chip.style.display    = 'flex';
-  chip.style.alignItems = 'center';
-  chip.style.justifyContent = 'center';
-  chip.style.padding = '6px 10px';
-  chip.style.overflow = 'hidden';
-
-  // Binary search the largest font that never overflows horizontally.
-  // Start generous so single letters are big.
-  var W = chip.clientWidth - 20; // minus padding
-  var minPx = 10;
-  var maxPx = Math.max(28, Math.floor(Math.min(200, W * 0.95))); // let single letters get large
-  var best = minPx;
-
-  function fits(px){
-    chip.style.fontSize = px + 'px';
-    // No horizontal overflow if scrollWidth <= clientWidth
-    return chip.scrollWidth <= chip.clientWidth;
-  }
-  while (minPx <= maxPx){
-    var mid = (minPx + maxPx) >> 1;
-    if (fits(mid)){ best = mid; minPx = mid + 1; }
-    else { maxPx = mid - 1; }
-  }
-  chip.style.fontSize = best + 'px';
-}
-
-function fitAllTierLabels(){
-  $$('.tier-row').forEach(function(row){
-    setChipWidthClamp(row);
-    fitTierLabelText($('.label-chip', row));
-  });
-}
-
 /* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
-  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle;
+  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap = dom.labelWrap;
 
   chip.textContent = cfg.label;
   chip.dataset.color = cfg.color;
@@ -266,11 +249,17 @@ function createRow(cfg){
   chip.style.color = contrastColor(cfg.color);
   del.style.background = darken(cfg.color, 0.35);
 
+  // set the column to our fixed wider width & fit the chip text
+  labelWrap.style.width = chipWidth() + 'px';
+  labelWrap.style.minWidth = labelWrap.style.width;
+  labelWrap.style.maxWidth = labelWrap.style.width;
+  fitTierChip(chip);
+
   var tint = tintFrom(cfg.color);
   drop.style.background = tint; drop.dataset.manual = 'false';
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', function(){ setChipWidthClamp(node); fitTierLabelText(chip); queueAutosave(); });
+  on(chip,'input', function(){ fitTierChip(chip); queueAutosave(); });
 
   on(del,'click', function(){
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
@@ -278,16 +267,12 @@ function createRow(cfg){
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions(); queueAutosave();
-    historyStack.push({type:'row-delete', rowHTML: node.outerHTML});
+    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); // simple restore via HTML
     updateUndo();
   });
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
-
-  // Initial clamp & fit
-  setTimeout(function(){ setChipWidthClamp(node); fitTierLabelText(chip); },0);
-
   return node;
 }
 
@@ -304,7 +289,7 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names (Tems→Temz, Verse→Versse) ---------- */
+/* ---------- Preset names (Temz, Versse fixed) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
@@ -333,7 +318,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Live label fitter for TOKENS (circles) — unchanged ---------- */
+/* ---------- Live label fitter for TOKENS (unchanged) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -350,7 +335,7 @@ function fitLiveLabel(lbl){
   s.fontSize=best+'px';
 }
 function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
-on(window,'resize', debounce(function(){ refitAllTierLabels(); refitAllLabels(); }, 120));
+on(window,'resize', debounce(function(){ refitAllLabels(); refitAllTierChips(); }, 120));
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -358,6 +343,7 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
+  // keyboard: Alt+←/→ reorder within row, Alt+↑/↓ move to prev/next row
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -427,9 +413,10 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = []; 
+var historyStack = []; // heterogeneous: {type:'move', ...} | {type:'row',...} | {type:'row-delete', html}
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
 
+/* snapshot before a move (for reorders) */
 function snapshotBefore(node){
   var parent = node.parentElement;
   var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
@@ -440,6 +427,7 @@ function snapshotBefore(node){
   };
 }
 
+/* generic token move (records moves & reorders) */
 function moveToken(node, toZone, beforeTok){
   var snap = snapshotBefore(node);
   var toId = toZone.id || (toZone.id=uid());
@@ -459,6 +447,7 @@ function moveToken(node, toZone, beforeTok){
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
 }
 
+/* perform a move into a parent before an element id (or append) */
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
   if(!item||!parent) return;
@@ -471,11 +460,13 @@ function performMoveTo(itemId, parentId, beforeId){
   });
 }
 
+/* UNDO */
 on($('#undoBtn'),'click', function(){
   var last = historyStack.pop(); if (!last) return;
   if (last.type==='move'){
     performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
   } else if (last.type==='row'){
+    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
@@ -484,15 +475,21 @@ on($('#undoBtn'),'click', function(){
       else container.appendChild(r);
     }
   } else if (last.type==='row-delete'){
+    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
       var row=tmp.firstElementChild;
       container.appendChild(row);
-      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
+      // rewire the row we just injected
+      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row), labelWrap=$('.tier-label',row);
+      labelWrap.style.width = chipWidth() + 'px';
+      labelWrap.style.minWidth = labelWrap.style.width;
+      labelWrap.style.maxWidth = labelWrap.style.width;
+      fitTierChip(chip);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', function(){ setChipWidthClamp(row); fitTierLabelText(chip); queueAutosave(); });
+      on(chip,'input', function(){ fitTierChip(chip); queueAutosave(); });
       on(del,'click', function(){
         if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
         var tokens = $$('.token', drop);
@@ -500,7 +497,6 @@ on($('#undoBtn'),'click', function(){
         row.remove(); refreshRadialOptions(); queueAutosave();
         historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
       });
-      setChipWidthClamp(row); fitTierLabelText(chip);
     }
   }
   updateUndo(); queueAutosave();
@@ -574,6 +570,7 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
+        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -669,6 +666,7 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
+    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -787,8 +785,9 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT: exact on-screen sizes ---------- */
+/* ---------- EXPORT: exact on-screen sizes, centered tier labels ---------- */
 (function(){
+  // feedback overlay (injected)
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -809,8 +808,21 @@ on($('#trashClear'),'click', function(){
 
     var clone = panel.cloneNode(true);
     clone.style.width = panel.getBoundingClientRect().width + 'px';
-    var s = document.createElement('style'); s.textContent='.row-del{display:none !important;}'; clone.appendChild(s);
 
+    // export-only CSS: keep exact sizes; hide row X; HARD center tier label text
+    var s = document.createElement('style');
+    s.textContent = `
+      .row-del{display:none !important;}
+      .tier-label{width:${chipWidth()}px !important;min-width:${chipWidth()}px !important;max-width:${chipWidth()}px !important;}
+      .label-chip{
+        display:flex !important; align-items:center !important; justify-content:center !important;
+        line-height:1 !important; white-space:normal !important; word-break:break-word !important;
+        padding:0 ${CHIP_PAD}px !important; height:100% !important;
+      }
+    `;
+    clone.appendChild(s);
+
+    // drop empty title from export
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
       var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -869,7 +881,7 @@ function serializeState(){
     });
     state.rows.push(entry);
   });
-  $$('#tray .token').forEach(function(tok){
+  $('#tray .token') && $$('#tray .token').forEach(function(tok){
     if (tok.querySelector('img')){
       state.tray.push({t:'i', src: tok.querySelector('img').src});
     } else {
@@ -890,13 +902,13 @@ function restoreState(state){
       else drop.appendChild(buildNameToken(it.text, it.color, true));
     });
   });
+  // tray
   $('#tray').innerHTML='';
   (state.tray||[]).forEach(function(it){
     if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
     else tray.appendChild(buildNameToken(it.text, it.color, true));
   });
-  refitAllLabels();
-  fitAllTierLabels();
+  refitAllLabels(); refitAllTierChips();
   return true;
 }
 function queueAutosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState())); }catch(_){ } }
@@ -913,32 +925,36 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   board = $('#tierBoard'); tray = $('#tray');
 
+  // Try restore
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
     announce('Restored your last session.'); 
   } else {
+    // build defaults
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
+  // add tier
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
-    fitAllTierLabels();
   });
 
+  // add custom name
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value;
+    var chosen = colorInput.value; // capture before resetting
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
-    colorInput.value = nextPreset();
+    colorInput.value = nextPreset(); // rotate to another good color
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
     refitAllLabels(); queueAutosave();
   });
 
+  // add images
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
@@ -948,24 +964,13 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  var help=$('#helpText') || $('.help');
-  if(help){
-    help.setAttribute('role','note');
-    help.setAttribute('aria-live','polite');
-    help.innerHTML =
-      '<strong>Help</strong><br>' +
-      (isSmall()
-       ? 'Phone: tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
-       : 'Desktop/iPad: drag circles into rows. Reorder by dragging items or use Alt+Arrow keys. Drag the grip to reorder rows.') +
-      ' Click the tier label to edit it. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
-  }
+  // Help (kept as-is in your HTML/CSS)
 
+  // click-to-place from tray
   enableClickToPlace(tray);
-
-  // Initial fits
-  refitAllLabels();
-  fitAllTierLabels();
 
   announce('Ready.');
   updateUndo();
+  refitAllLabels();
+  refitAllTierChips();
 });
