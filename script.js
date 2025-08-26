@@ -177,14 +177,24 @@ function tintFrom(color){
 }
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
-/* ---------- Clamp label chip width so it never spills into the row ---------- */
-function applyChipMaxWidth(row){
+/* ---------- Tier-label sizing (NEW) ---------- */
+/* 1) Keep the chip’s native width (never grows horizontally).
+   2) Auto-size the chip’s text so long labels shrink and can wrap.
+   3) Chip may grow vertically; stays centered. */
+function setChipWidthClamp(row){
   var wrap = row.querySelector('.tier-label');
   var chip = row.querySelector('.label-chip');
   var handle = row.querySelector('.row-handle');
   var del = row.querySelector('.row-del');
   if (!wrap || !chip) return;
 
+  // 1) remember native width the very first time
+  if (!chip.dataset.nativeW) {
+    chip.dataset.nativeW = String(Math.max(80, Math.round(chip.getBoundingClientRect().width || 120)));
+  }
+  var nativeW = parseFloat(chip.dataset.nativeW);
+
+  // Available inner width of the labelWrap minus handle/del + gutter
   var cs = getComputedStyle(wrap);
   var inner = wrap.clientWidth
     - (parseFloat(cs.paddingLeft)||0)
@@ -195,18 +205,54 @@ function applyChipMaxWidth(row){
   if (del)    reserve += (del.offsetWidth    || 40) + 8;
 
   var gutter = 16;
-  var max = Math.max(80, Math.floor(inner - reserve - gutter));
-  chip.style.maxWidth = max + 'px';
+  var allowed = Math.max(80, inner - reserve - gutter);
 
-  chip.style.overflow = 'hidden';
-  chip.style.textOverflow = 'ellipsis';
-  chip.style.whiteSpace = 'nowrap';
-  chip.style.display = 'inline-flex';
+  // Final fixed width: keep native unless layout forces us smaller
+  var finalW = Math.min(nativeW, allowed);
+  chip.style.width = finalW + 'px';
+  chip.style.maxWidth = finalW + 'px';
+}
+
+function fitTierLabelText(chip){
+  if (!chip) return;
+
+  // allow wrapping; center; let height expand
+  chip.style.whiteSpace = 'normal';
+  chip.style.wordBreak  = 'break-word';
+  chip.style.hyphens    = 'auto';
+  chip.style.textAlign  = 'center';
+  chip.style.lineHeight = '1.05';
+  chip.style.display    = 'flex';
   chip.style.alignItems = 'center';
   chip.style.justifyContent = 'center';
+  chip.style.padding = '6px 10px';
+  chip.style.overflow = 'hidden';
+
+  // Binary search the largest font that never overflows horizontally.
+  // Start generous so single letters are big.
+  var W = chip.clientWidth - 20; // minus padding
+  var minPx = 10;
+  var maxPx = Math.max(28, Math.floor(Math.min(200, W * 0.95))); // let single letters get large
+  var best = minPx;
+
+  function fits(px){
+    chip.style.fontSize = px + 'px';
+    // No horizontal overflow if scrollWidth <= clientWidth
+    return chip.scrollWidth <= chip.clientWidth;
+  }
+  while (minPx <= maxPx){
+    var mid = (minPx + maxPx) >> 1;
+    if (fits(mid)){ best = mid; minPx = mid + 1; }
+    else { maxPx = mid - 1; }
+  }
+  chip.style.fontSize = best + 'px';
 }
-function applyAllChipMaxWidths(){
-  $$('.tier-row').forEach(applyChipMaxWidth);
+
+function fitAllTierLabels(){
+  $$('.tier-row').forEach(function(row){
+    setChipWidthClamp(row);
+    fitTierLabelText($('.label-chip', row));
+  });
 }
 
 /* ---------- Create / wire a row ---------- */
@@ -224,7 +270,7 @@ function createRow(cfg){
   drop.style.background = tint; drop.dataset.manual = 'false';
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', function(){ applyChipMaxWidth(node); queueAutosave(); });
+  on(chip,'input', function(){ setChipWidthClamp(node); fitTierLabelText(chip); queueAutosave(); });
 
   on(del,'click', function(){
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
@@ -232,15 +278,15 @@ function createRow(cfg){
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions(); queueAutosave();
-    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); // simple restore via HTML
+    historyStack.push({type:'row-delete', rowHTML: node.outerHTML});
     updateUndo();
   });
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
 
-  // NEW: clamp editable chip width on create
-  applyChipMaxWidth(node);
+  // Initial clamp & fit
+  setTimeout(function(){ setChipWidthClamp(node); fitTierLabelText(chip); },0);
 
   return node;
 }
@@ -287,7 +333,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Live label fitter (no wraps, centered) ---------- */
+/* ---------- Live label fitter for TOKENS (circles) — unchanged ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -304,7 +350,7 @@ function fitLiveLabel(lbl){
   s.fontSize=best+'px';
 }
 function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
-on(window,'resize', debounce(function(){ refitAllLabels(); applyAllChipMaxWidths(); }, 120));
+on(window,'resize', debounce(function(){ refitAllTierLabels(); refitAllLabels(); }, 120));
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -312,7 +358,6 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
-  // keyboard: Alt+←/→ reorder within row, Alt+↑/↓ move to prev/next row
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -382,10 +427,9 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = []; // heterogeneous: {type:'move', ...} | {type:'row',...} | {type:'row-delete', html}
+var historyStack = []; 
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
 
-/* snapshot before a move (for reorders) */
 function snapshotBefore(node){
   var parent = node.parentElement;
   var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
@@ -396,7 +440,6 @@ function snapshotBefore(node){
   };
 }
 
-/* generic token move (records moves & reorders) */
 function moveToken(node, toZone, beforeTok){
   var snap = snapshotBefore(node);
   var toId = toZone.id || (toZone.id=uid());
@@ -416,7 +459,6 @@ function moveToken(node, toZone, beforeTok){
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
 }
 
-/* perform a move into a parent before an element id (or append) */
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
   if(!item||!parent) return;
@@ -429,13 +471,11 @@ function performMoveTo(itemId, parentId, beforeId){
   });
 }
 
-/* UNDO */
 on($('#undoBtn'),'click', function(){
   var last = historyStack.pop(); if (!last) return;
   if (last.type==='move'){
     performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
   } else if (last.type==='row'){
-    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
@@ -444,17 +484,15 @@ on($('#undoBtn'),'click', function(){
       else container.appendChild(r);
     }
   } else if (last.type==='row-delete'){
-    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
       var row=tmp.firstElementChild;
       container.appendChild(row);
-      // rewire the row we just injected
       var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', function(){ applyChipMaxWidth(row); queueAutosave(); });
+      on(chip,'input', function(){ setChipWidthClamp(row); fitTierLabelText(chip); queueAutosave(); });
       on(del,'click', function(){
         if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
         var tokens = $$('.token', drop);
@@ -462,8 +500,7 @@ on($('#undoBtn'),'click', function(){
         row.remove(); refreshRadialOptions(); queueAutosave();
         historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
       });
-      // clamp width for restored row
-      applyChipMaxWidth(row);
+      setChipWidthClamp(row); fitTierLabelText(chip);
     }
   }
   updateUndo(); queueAutosave();
@@ -537,7 +574,6 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
-        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -564,7 +600,6 @@ function enablePointerDrag(node){
 
 /* ---------- Legacy mouse/touch fallback (desktop) ---------- */
 function enableMouseTouchDragFallback(node){
-  // intentionally omitted (PointerEvent supported widely). Kept for safety:
   on(node,'mousedown', function(e){ e.preventDefault(); });
 }
 
@@ -634,7 +669,6 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
-    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -755,7 +789,6 @@ on($('#trashClear'),'click', function(){
 
 /* ---------- EXPORT: exact on-screen sizes ---------- */
 (function(){
-  // feedback overlay (injected)
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -764,25 +797,20 @@ on($('#trashClear'),'click', function(){
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
   on($('#saveBtn'),'click', function(){
-    // check library
     if (typeof html2canvas !== 'function'){
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
-    // tidy UI
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
-    // clone the *board panel* exactly as-is (no size/label changes)
     var panel = $('#boardPanel');
     var cloneWrap = document.createElement('div');
     cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
 
     var clone = panel.cloneNode(true);
-    clone.style.width = panel.getBoundingClientRect().width + 'px'; // mirror current width
-    // hide delete X only
+    clone.style.width = panel.getBoundingClientRect().width + 'px';
     var s = document.createElement('style'); s.textContent='.row-del{display:none !important;}'; clone.appendChild(s);
 
-    // drop empty title
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
       var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -814,7 +842,6 @@ on($('#trashClear'),'click', function(){
   var colorInput = $('#nameColor');
   var preview = $('#colorPreview');
   if (!preview) {
-    // try to find a sibling; if not, create a little ring preview
     var addBtn = $('#addNameBtn');
     preview=document.createElement('span'); preview.id='colorPreview';
     preview.setAttribute('aria-hidden','true');
@@ -830,7 +857,6 @@ on($('#trashClear'),'click', function(){
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
   var state={ rows:[], tray:[], version:1 };
-  // rows & tokens
   $$('.tier-row').forEach(function(r){
     var chip=$('.label-chip',r);
     var entry={ label: chip.textContent, color: chip.dataset.color || '#8b7dff', items: [] };
@@ -843,7 +869,6 @@ function serializeState(){
     });
     state.rows.push(entry);
   });
-  // tray tokens
   $$('#tray .token').forEach(function(tok){
     if (tok.querySelector('img')){
       state.tray.push({t:'i', src: tok.querySelector('img').src});
@@ -865,14 +890,13 @@ function restoreState(state){
       else drop.appendChild(buildNameToken(it.text, it.color, true));
     });
   });
-  // tray
   $('#tray').innerHTML='';
   (state.tray||[]).forEach(function(it){
     if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
     else tray.appendChild(buildNameToken(it.text, it.color, true));
   });
   refitAllLabels();
-  applyAllChipMaxWidths();
+  fitAllTierLabels();
   return true;
 }
 function queueAutosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState())); }catch(_){ } }
@@ -889,37 +913,32 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   board = $('#tierBoard'); tray = $('#tray');
 
-  // Try restore
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
     announce('Restored your last session.'); 
   } else {
-    // build defaults
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
-  // add tier
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
-    applyAllChipMaxWidths();
+    fitAllTierLabels();
   });
 
-  // add custom name
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value; // capture before resetting
+    var chosen = colorInput.value;
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
-    colorInput.value = nextPreset(); // rotate to another good color
+    colorInput.value = nextPreset();
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
     refitAllLabels(); queueAutosave();
   });
 
-  // add images
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
@@ -929,7 +948,6 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help (kept as in your baseline)
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
@@ -942,14 +960,12 @@ document.addEventListener('DOMContentLoaded', function start(){
       ' Click the tier label to edit it. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
   }
 
-  // click-to-place from tray
   enableClickToPlace(tray);
 
-  // initial clamps
-  applyAllChipMaxWidths();
+  // Initial fits
   refitAllLabels();
+  fitAllTierLabels();
 
-  // announce ready
   announce('Ready.');
   updateUndo();
 });
