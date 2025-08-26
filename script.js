@@ -177,6 +177,38 @@ function tintFrom(color){
 }
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
+/* ---------- Clamp label chip width so it never spills into the row ---------- */
+function applyChipMaxWidth(row){
+  var wrap = row.querySelector('.tier-label');
+  var chip = row.querySelector('.label-chip');
+  var handle = row.querySelector('.row-handle');
+  var del = row.querySelector('.row-del');
+  if (!wrap || !chip) return;
+
+  var cs = getComputedStyle(wrap);
+  var inner = wrap.clientWidth
+    - (parseFloat(cs.paddingLeft)||0)
+    - (parseFloat(cs.paddingRight)||0);
+
+  var reserve = 0;
+  if (handle) reserve += (handle.offsetWidth || 40) + 8;
+  if (del)    reserve += (del.offsetWidth    || 40) + 8;
+
+  var gutter = 16;
+  var max = Math.max(80, Math.floor(inner - reserve - gutter));
+  chip.style.maxWidth = max + 'px';
+
+  chip.style.overflow = 'hidden';
+  chip.style.textOverflow = 'ellipsis';
+  chip.style.whiteSpace = 'nowrap';
+  chip.style.display = 'inline-flex';
+  chip.style.alignItems = 'center';
+  chip.style.justifyContent = 'center';
+}
+function applyAllChipMaxWidths(){
+  $$('.tier-row').forEach(applyChipMaxWidth);
+}
+
 /* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
@@ -192,7 +224,7 @@ function createRow(cfg){
   drop.style.background = tint; drop.dataset.manual = 'false';
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', queueAutosave);
+  on(chip,'input', function(){ applyChipMaxWidth(node); queueAutosave(); });
 
   on(del,'click', function(){
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
@@ -206,6 +238,10 @@ function createRow(cfg){
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
+
+  // NEW: clamp editable chip width on create
+  applyChipMaxWidth(node);
+
   return node;
 }
 
@@ -222,11 +258,11 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names (incl. Kikki, Tems, TomTom) ---------- */
+/* ---------- Preset names (Tems→Temz, Verse→Versse) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
-  "Munch","Paper","Ray","Safoof","Tems","TomTom","V","Verse","Wobbles","Xavier"
+  "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
 /* ---------- Palette (already tuned earlier) ---------- */
@@ -268,7 +304,7 @@ function fitLiveLabel(lbl){
   s.fontSize=best+'px';
 }
 function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
-on(window,'resize', debounce(refitAllLabels, 120));
+on(window,'resize', debounce(function(){ refitAllLabels(); applyAllChipMaxWidths(); }, 120));
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -418,7 +454,7 @@ on($('#undoBtn'),'click', function(){
       var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', queueAutosave);
+      on(chip,'input', function(){ applyChipMaxWidth(row); queueAutosave(); });
       on(del,'click', function(){
         if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
         var tokens = $$('.token', drop);
@@ -426,6 +462,8 @@ on($('#undoBtn'),'click', function(){
         row.remove(); refreshRadialOptions(); queueAutosave();
         historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
       });
+      // clamp width for restored row
+      applyChipMaxWidth(row);
     }
   }
   updateUndo(); queueAutosave();
@@ -834,6 +872,7 @@ function restoreState(state){
     else tray.appendChild(buildNameToken(it.text, it.color, true));
   });
   refitAllLabels();
+  applyAllChipMaxWidths();
   return true;
 }
 function queueAutosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState())); }catch(_){ } }
@@ -865,6 +904,7 @@ document.addEventListener('DOMContentLoaded', function start(){
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
+    applyAllChipMaxWidths();
   });
 
   // add custom name
@@ -889,7 +929,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help (a11y: announceable)
+  // Help (kept as in your baseline)
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
@@ -905,8 +945,11 @@ document.addEventListener('DOMContentLoaded', function start(){
   // click-to-place from tray
   enableClickToPlace(tray);
 
+  // initial clamps
+  applyAllChipMaxWidths();
+  refitAllLabels();
+
   // announce ready
   announce('Ready.');
   updateUndo();
-  refitAllLabels();
 });
