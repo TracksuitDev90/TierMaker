@@ -95,7 +95,6 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
     if(icon) icon.innerHTML = (target==='Light'
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    // re-tint row backgrounds based on label color
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
       if (drop && drop.dataset.manual!=='true'){
@@ -131,25 +130,37 @@ function flipZones(zones, mutate){
   });
 }
 
-/* ---------- Tier label fitting (ONLY affects S/A/B/C/D chips) ---------- */
-/* We keep the label column a fixed (wider) width. Label text starts huge and
-   shrinks as characters increase; it can wrap, but the column never grows wider. */
-var CHIP_PAD = 12;                         // inner padding used for fit calc
-var CHIP_W_DESK = 188;                     // wider column on desktop
-var CHIP_W_MOB  = 172;                     // slightly narrower on mobile
+/* =======================================================================
+   Tier label fitting (ONLY affects S/A/B/C/D chips)
+   - Fixed, wider label column
+   - Reserve space for handle + delete + gutter (so it never overlaps row)
+   - Large defaults for 1–2 chars; shrink as text grows; wrapping allowed
+   ======================================================================= */
+var CHIP_PAD = 12;            // internal padding inside the colored chip
+var CHIP_W_DESK = 188;        // label column width desktop
+var CHIP_W_MOB  = 172;        // label column width mobile
+var CHIP_GUTTER_RIGHT = 14;   // space between label column and row
+var HANDLE_W = 22;            // approx handle button width
+var DEL_W    = 28;            // approx delete button width
 function chipWidth(){ return isSmall() ? CHIP_W_MOB : CHIP_W_DESK; }
 
-/* Choose a large starting size based on character count, then shrink until it fits. */
 function fitTierChip(chip){
   if (!chip) return;
   var wrap = chip.parentElement; // .tier-label
-  // fix the column width so the chip never expands horizontally
-  var w = chipWidth();
-  wrap.style.width    = w + 'px';
-  wrap.style.minWidth = w + 'px';
-  wrap.style.maxWidth = w + 'px';
 
-  // flex center the text perfectly
+  // fixed column width + visible gutter so it never intrudes into the row
+  var full = chipWidth();
+  wrap.style.width    = full + 'px';
+  wrap.style.minWidth = full + 'px';
+  wrap.style.maxWidth = full + 'px';
+  wrap.style.marginRight = CHIP_GUTTER_RIGHT + 'px';
+
+  // available width for the colored chip itself
+  var avail = Math.max(60, full - HANDLE_W - DEL_W - 8); // minus controls + a little spacing
+  chip.style.maxWidth = avail + 'px';
+  chip.style.flex = '0 0 auto';
+
+  // center text perfectly
   var s = chip.style;
   s.display='flex';
   s.alignItems='center';
@@ -157,29 +168,27 @@ function fitTierChip(chip){
   s.textAlign='center';
   s.boxSizing='border-box';
   s.padding = '0 ' + CHIP_PAD + 'px';
-  s.whiteSpace='normal';        // allow wrapping
+  s.whiteSpace='normal';
   s.wordBreak='break-word';
   s.hyphens='auto';
-  s.lineHeight='1.0';
+  s.lineHeight='1';
 
-  // big default, then scale down with length buckets
+  // large defaults that shrink with length buckets
   var len = (chip.textContent || '').trim().length || 1;
   var base;
-  if (len <= 1) base = 48;           // S
-  else if (len === 2) base = 40;
-  else if (len === 3) base = 34;
-  else if (len === 4) base = 30;
-  else if (len === 5) base = 26;
-  else if (len <= 7) base = 22;      // 6–7
-  else if (len <= 10) base = 19;     // 8–10
-  else base = 17;                    // 11+
+  if (len <= 1) base = 64;           // BIG default letter
+  else if (len === 2) base = 52;
+  else if (len === 3) base = 38;
+  else if (len === 4) base = 32;
+  else if (len === 5) base = 28;
+  else if (len <= 7) base = 24;      // 6–7
+  else if (len <= 10) base = 20;     // 8–10
+  else base = 18;                    // 11+
 
-  // now shrink until no horizontal overflow
   var min = 12;
   function fits(px){
     s.fontSize = px + 'px';
-    // force a layout read to check overflow
-    return chip.scrollWidth <= (w - CHIP_PAD*2 + 0.5);
+    return chip.scrollWidth <= (avail - CHIP_PAD*2 + 0.5);
   }
   var lo=min, hi=base, best=lo;
   while (lo <= hi){
@@ -188,8 +197,6 @@ function fitTierChip(chip){
   }
   s.fontSize = best + 'px';
 }
-
-/* Refit all tier chips (call on resize) */
 function refitAllTierChips(){ $$('.label-chip').forEach(fitTierChip); }
 
 /* ---------- Row DOM ---------- */
@@ -249,10 +256,12 @@ function createRow(cfg){
   chip.style.color = contrastColor(cfg.color);
   del.style.background = darken(cfg.color, 0.35);
 
-  // set the column to our fixed wider width & fit the chip text
-  labelWrap.style.width = chipWidth() + 'px';
-  labelWrap.style.minWidth = labelWrap.style.width;
-  labelWrap.style.maxWidth = labelWrap.style.width;
+  // fixed column + gutter + initial fit
+  var full = chipWidth();
+  labelWrap.style.width = full + 'px';
+  labelWrap.style.minWidth = full + 'px';
+  labelWrap.style.maxWidth = full + 'px';
+  labelWrap.style.marginRight = CHIP_GUTTER_RIGHT + 'px';
   fitTierChip(chip);
 
   var tint = tintFrom(cfg.color);
@@ -267,7 +276,7 @@ function createRow(cfg){
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions(); queueAutosave();
-    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); // simple restore via HTML
+    historyStack.push({type:'row-delete', rowHTML: node.outerHTML});
     updateUndo();
   });
 
@@ -296,7 +305,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette (already tuned earlier) ---------- */
+/* ---------- Palette (unchanged) ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -343,7 +352,6 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
-  // keyboard: Alt+←/→ reorder within row, Alt+↑/↓ move to prev/next row
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -413,10 +421,8 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = []; // heterogeneous: {type:'move', ...} | {type:'row',...} | {type:'row-delete', html}
+var historyStack = [];
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
-
-/* snapshot before a move (for reorders) */
 function snapshotBefore(node){
   var parent = node.parentElement;
   var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
@@ -426,8 +432,6 @@ function snapshotBefore(node){
     fromBeforeId: fromBefore
   };
 }
-
-/* generic token move (records moves & reorders) */
 function moveToken(node, toZone, beforeTok){
   var snap = snapshotBefore(node);
   var toId = toZone.id || (toZone.id=uid());
@@ -446,8 +450,6 @@ function moveToken(node, toZone, beforeTok){
   });
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
 }
-
-/* perform a move into a parent before an element id (or append) */
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
   if(!item||!parent) return;
@@ -459,14 +461,11 @@ function performMoveTo(itemId, parentId, beforeId){
     parent.appendChild(item);
   });
 }
-
-/* UNDO */
 on($('#undoBtn'),'click', function(){
   var last = historyStack.pop(); if (!last) return;
   if (last.type==='move'){
     performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
   } else if (last.type==='row'){
-    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
@@ -475,17 +474,17 @@ on($('#undoBtn'),'click', function(){
       else container.appendChild(r);
     }
   } else if (last.type==='row-delete'){
-    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
       var row=tmp.firstElementChild;
       container.appendChild(row);
-      // rewire the row we just injected
       var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row), labelWrap=$('.tier-label',row);
-      labelWrap.style.width = chipWidth() + 'px';
-      labelWrap.style.minWidth = labelWrap.style.width;
-      labelWrap.style.maxWidth = labelWrap.style.width;
+      var full = chipWidth();
+      labelWrap.style.width = full + 'px';
+      labelWrap.style.minWidth = full + 'px';
+      labelWrap.style.maxWidth = full + 'px';
+      labelWrap.style.marginRight = CHIP_GUTTER_RIGHT + 'px';
       fitTierChip(chip);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
@@ -570,7 +569,6 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
-        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -666,7 +664,6 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
-    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -785,9 +782,8 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT: exact on-screen sizes, centered tier labels ---------- */
+/* ---------- EXPORT: exact on-screen sizes + centered tier labels ---------- */
 (function(){
-  // feedback overlay (injected)
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -809,12 +805,18 @@ on($('#trashClear'),'click', function(){
     var clone = panel.cloneNode(true);
     clone.style.width = panel.getBoundingClientRect().width + 'px';
 
-    // export-only CSS: keep exact sizes; hide row X; HARD center tier label text
+    // export-only CSS: keep widths consistent and hard-center tier text
     var s = document.createElement('style');
     s.textContent = `
       .row-del{display:none !important;}
-      .tier-label{width:${chipWidth()}px !important;min-width:${chipWidth()}px !important;max-width:${chipWidth()}px !important;}
+      .tier-label{
+        width:${chipWidth()}px !important;
+        min-width:${chipWidth()}px !important;
+        max-width:${chipWidth()}px !important;
+        margin-right:${CHIP_GUTTER_RIGHT}px !important;
+      }
       .label-chip{
+        max-width:${Math.max(60, chipWidth()-HANDLE_W-DEL_W-8)}px !important;
         display:flex !important; align-items:center !important; justify-content:center !important;
         line-height:1 !important; white-space:normal !important; word-break:break-word !important;
         padding:0 ${CHIP_PAD}px !important; height:100% !important;
@@ -822,7 +824,6 @@ on($('#trashClear'),'click', function(){
     `;
     clone.appendChild(s);
 
-    // drop empty title from export
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
       var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -902,7 +903,6 @@ function restoreState(state){
       else drop.appendChild(buildNameToken(it.text, it.color, true));
     });
   });
-  // tray
   $('#tray').innerHTML='';
   (state.tray||[]).forEach(function(it){
     if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
@@ -925,36 +925,31 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   board = $('#tierBoard'); tray = $('#tray');
 
-  // Try restore
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
     announce('Restored your last session.'); 
   } else {
-    // build defaults
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
-  // add tier
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
   });
 
-  // add custom name
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value; // capture before resetting
+    var chosen = colorInput.value;
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
-    colorInput.value = nextPreset(); // rotate to another good color
+    colorInput.value = nextPreset();
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
     refitAllLabels(); queueAutosave();
   });
 
-  // add images
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
@@ -964,9 +959,6 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help (kept as-is in your HTML/CSS)
-
-  // click-to-place from tray
   enableClickToPlace(tray);
 
   announce('Ready.');
