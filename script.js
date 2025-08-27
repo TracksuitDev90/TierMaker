@@ -80,7 +80,7 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
   );
 }
 
-/* ---------- Theme toggle keeps current styles in sync ---------- */
+/* ---------- Theme toggle ---------- */
 (function(){
   var root=document.documentElement;
   var toggle=$('#themeToggle'); if(!toggle) return;
@@ -95,11 +95,17 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
     if(icon) icon.innerHTML = (target==='Light'
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    // re-tint row backgrounds based on label color
+    // retint row backgrounds from label color
     $$('.tier-row').forEach(function(row){
-      var chip=$('.label-chip',row), drop=$('.tier-drop',row);
+      var chip=$('.label-chip',row), drop=$('.tier-drop',row), wrap=$('.tier-label',row);
+      if (wrap && chip) { // set text color to maintain contrast
+        var c = chip.dataset.color || '#8b7dff';
+        wrap.style.background = c;
+        wrap.style.color = contrastColor(c);
+        chip.style.color = wrap.style.color;
+      }
       if (drop && drop.dataset.manual!=='true'){
-        drop.style.background = tintFrom(chip && chip.dataset.color ? chip.dataset.color : '#8b7dff');
+        drop.style.background = tintFrom((chip && chip.dataset.color)||'#8b7dff');
       }
     });
   }
@@ -109,24 +115,26 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 var board=null, tray=null;
 
 /* =========================================================
-   ROW LABEL COLUMN: freeze width + chip clamp + text fit
+   ROW LABEL COLUMN: color fill, fixed width, 2-line fit
 ========================================================= */
 
-/** Fixed width (px) for the left label column. Adjust if your CSS differs. */
-var LABEL_COL_PX = 168;
+function labelColWidth(){ return isSmall() ? 120 : 160; }
 
-/** Apply fixed column width so the left label never grows into the row. */
 function freezeLabelColumn(row){
   var wrap = row.querySelector('.tier-label');
   if (!wrap) return;
-  wrap.style.flex = '0 0 ' + LABEL_COL_PX + 'px';
-  wrap.style.width = LABEL_COL_PX + 'px';
-  wrap.style.minWidth = LABEL_COL_PX + 'px';
-  wrap.style.maxWidth = LABEL_COL_PX + 'px';
+  var W = labelColWidth();
+  wrap.style.flex = '0 0 ' + W + 'px';
+  wrap.style.width = W + 'px';
+  wrap.style.minWidth = W + 'px';
+  wrap.style.maxWidth = W + 'px';
   wrap.style.overflow = 'hidden';
+  wrap.style.display = 'flex';
+  wrap.style.alignItems = 'center';
+  wrap.style.justifyContent = 'center';
+  wrap.style.textAlign = 'center';
 }
 
-/** Clamp the editable chip inside the fixed column and ellipsize if needed. */
 function clampChipWidth(row){
   var wrap = row.querySelector('.tier-label');
   var chip = row.querySelector('.label-chip');
@@ -136,46 +144,50 @@ function clampChipWidth(row){
   var reserve = 0;
   if (handle) reserve += (handle.offsetWidth || 40) + 8;
   if (del)    reserve += (del.offsetWidth    || 40) + 8;
-  var gutter = 12;
-  var max = Math.max(60, LABEL_COL_PX - reserve - gutter);
+  var gutter = 10;
+  var max = Math.max(60, labelColWidth() - reserve - gutter);
   chip.style.maxWidth = max + 'px';
+  chip.style.width = '100%';
   chip.style.overflow = 'hidden';
   chip.style.textOverflow = 'ellipsis';
-  chip.style.whiteSpace = 'nowrap';
-  chip.style.display='inline-flex';
+  chip.style.whiteSpace = 'normal'; // allow wrapping (handled by fitter)
+  chip.style.display='flex';
   chip.style.alignItems='center';
   chip.style.justifyContent='center';
+  chip.style.textAlign='center';
+  chip.style.background='transparent'; // color is on the whole column now
 }
 
-/** Big-by-default single-line text that shrinks as user types. */
 function fitChipText(chip){
   if(!chip) return;
-  var padX = 10;
-  chip.style.whiteSpace='nowrap';
-  chip.style.lineHeight='1';
-  chip.style.display='inline-flex';
-  chip.style.alignItems='center';
-  chip.style.justifyContent='center';
+  // Up to TWO lines; shrink until it fits vertically to <= 2 lines.
+  var padX = 6;
+  chip.style.wordBreak='break-word';
+  chip.style.hyphens='auto';
   chip.style.padding='0 '+padX+'px';
-  chip.style.height='100%';
-  chip.style.wordBreak='normal';
-  chip.style.hyphens='none';
-  chip.style.overflow='hidden';
-  var W = chip.clientWidth || LABEL_COL_PX;
-  var H = chip.clientHeight || 44;
-  var lo = 14, hi = 32, best = hi; // large default
+  chip.style.lineHeight='1.15';
+  chip.style.whiteSpace='normal';
+  var wrap = chip.parentElement;
+  var H = wrap.clientHeight || 48;
+  var lo = 12, hi = 34, best = hi;
+
   function fits(px){
-    chip.style.fontSize = px+'px';
-    return chip.scrollWidth <= (W) && chip.scrollHeight <= (H);
+    chip.style.fontSize = px + 'px';
+    chip.style.maxHeight = 'none';
+    var lh = 1.15 * px;
+    var maxH = Math.min(H, (lh * 2) + 1); // 2 lines max
+    // Allow wrapping; ensure total height ≤ 2 lines
+    return chip.scrollHeight <= maxH;
   }
-  while(lo<=hi){
-    var mid=(lo+hi)>>1;
-    if(fits(mid)){ best=mid; lo=mid+1; } else { hi=mid-1; }
+
+  while (lo <= hi){
+    var mid = (lo + hi) >> 1;
+    if (fits(mid)){ best = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
-  chip.style.fontSize = best+'px';
+  chip.style.fontSize = best + 'px';
+  chip.style.maxHeight = (1.15 * best * 2) + 'px';
 }
 
-/** Apply width & text fitting to all rows. */
 function enforceLabelLayout(row){
   freezeLabelColumn(row);
   clampChipWidth(row);
@@ -185,7 +197,7 @@ function enforceAllLabelLayouts(){
   $$('.tier-row').forEach(enforceLabelLayout);
 }
 
-/* ---------- FLIP animation helper ---------- */
+/* ---------- FLIP helper ---------- */
 function flipZones(zones, mutate){
   var prev=new Map();
   zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
@@ -257,12 +269,15 @@ function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; retu
 /* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
-  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle;
+  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, wrap = dom.labelWrap;
 
   chip.textContent = cfg.label;
-  chip.dataset.color = cfg.color;
-  chip.style.background = cfg.color;
-  chip.style.color = contrastColor(cfg.color);
+
+  // Color the ENTIRE label column (not the chip)
+  wrap.style.background = cfg.color;
+  wrap.style.color = contrastColor(cfg.color);
+  chip.style.color = wrap.style.color;
+  chip.dataset.color = cfg.color;               // keep for tinting drop
   del.style.background = darken(cfg.color, 0.35);
 
   var tint = tintFrom(cfg.color);
@@ -282,10 +297,7 @@ function createRow(cfg){
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
-
-  // Freeze left column + clamp + fit text right away
   enforceLabelLayout(node);
-
   return node;
 }
 
@@ -302,7 +314,7 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names (Temz, Versse fixed) ---------- */
+/* ---------- Preset names (Temz, Versse) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
@@ -331,7 +343,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Token label fitter (no wraps, centered) ---------- */
+/* ---------- Token label fitter (no wraps; circles) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -359,7 +371,6 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
-  // keyboard: Alt+←/→ reorder within row, Alt+↑/↓ move to prev/next row
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -429,7 +440,7 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = []; // heterogeneous
+var historyStack = [];
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
 function snapshotBefore(node){
   var parent = node.parentElement;
@@ -520,7 +531,7 @@ function insertBeforeForPoint(zone,x,y,except){
 
 /* ---------- Click-to-place ---------- */
 function enableClickToPlace(zone){
-  on(zone,'click', function(e){
+  on(zone,'click', function(){
     var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
     var selected = $('.token.selected'); if (!selected) return;
     if(isSmall() && !selected.closest('#tray')) return;
@@ -761,106 +772,60 @@ on($('#trashClear'),'click', function(){
 });
 
 /* =========================================================
-   EXPORT: capture exactly what’s on screen (mobile + desktop)
-   - Freezes label column widths inside the clone too.
+   PNG EXPORT — capture exactly the on-screen panel
+   (works the same on desktop & mobile)
 ========================================================= */
 (function(){
-  var overlay=document.createElement('div');
-  overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
-  overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
-  overlay.innerHTML='<div style="padding:14px 18px;border-radius:10px;background:#111;color:#fff;font-weight:600;display:flex;gap:10px;align-items:center;"><span class="spinner" style="width:18px;height:18px;border-radius:50%;border:3px solid #fff;border-right-color:transparent;display:inline-block;animation:spin .9s linear infinite;"></span><span>Rendering PNG…</span></div>';
-  document.body.appendChild(overlay);
-  var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
+  // provide a small style for export visibility toggles
+  var style=document.createElement('style');
+  style.textContent = `
+    body.exporting .row-del { visibility: hidden !important; }
+    body.exporting #radialPicker { display: none !important; }
+  `;
+  document.head.appendChild(style);
 
   on($('#saveBtn'),'click', function(){
     if (typeof html2canvas !== 'function'){
-      alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
+      alert('Sorry, PNG export is unavailable (html2canvas not loaded).');
+      return;
     }
+
     closeRadial();
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     var panel = $('#boardPanel');
-    var cloneWrap = document.createElement('div');
-    cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
+    var rect = panel.getBoundingClientRect();
+    var width  = Math.ceil(rect.width);
+    var height = Math.ceil(rect.height);
+    var scale  = window.devicePixelRatio || 2;
 
-    var clone = panel.cloneNode(true);
+    // Freeze label widths right before capture (already enforced live)
+    enforceAllLabelLayouts();
 
-    // Hide delete X in the capture
-    var s = document.createElement('style');
-    s.textContent='.row-del{display:none!important;}';
-    clone.appendChild(s);
+    document.body.classList.add('exporting');
 
-    // Drop empty title
-    var title = clone.querySelector('.board-title');
-    if (title && title.textContent.replace(/\s+/g,'') === '') {
-      var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
-    }
-
-    // Freeze label column widths inside the clone to match live rows
-    var liveRows = $$('.tier-row', panel);
-    var cloneRows = $$('.tier-row', clone);
-    for (var i=0;i<cloneRows.length;i++){
-      var live = liveRows[i], cr = cloneRows[i];
-      if (!live || !cr) continue;
-      var liveWrap = live.querySelector('.tier-label');
-      var w = (liveWrap ? liveWrap.getBoundingClientRect().width : LABEL_COL_PX);
-      var wrap = cr.querySelector('.tier-label');
-      if (wrap){
-        wrap.style.flex = '0 0 '+w+'px';
-        wrap.style.width = w+'px';
-        wrap.style.minWidth = w+'px';
-        wrap.style.maxWidth = w+'px';
-        wrap.style.overflow = 'hidden';
-        // also clamp chip in clone
-        var chip = wrap.querySelector('.label-chip');
-        if (chip){
-          var handle = wrap.querySelector('.row-handle');
-          var del = wrap.querySelector('.row-del');
-          var reserve = 0;
-          if (handle) reserve += (handle.offsetWidth || 40) + 8;
-          if (del)    reserve += (del.offsetWidth    || 40) + 8;
-          var max = Math.max(60, w - reserve - 12);
-          chip.style.maxWidth = max+'px';
-          chip.style.whiteSpace='nowrap';
-          chip.style.textOverflow='ellipsis';
-          chip.style.overflow='hidden';
-          chip.style.display='inline-flex';
-          chip.style.alignItems='center';
-          chip.style.justifyContent='center';
-        }
-      }
-    }
-
-    // Size the clone to the real scroll area so mobile == desktop
-    var targetW = panel.scrollWidth;
-    var targetH = panel.scrollHeight;
-    clone.style.width = targetW + 'px';
-    clone.style.height = targetH + 'px';
-
-    cloneWrap.appendChild(clone);
-    document.body.appendChild(cloneWrap);
-    overlay.style.display='flex';
-
-    html2canvas(clone, {
+    html2canvas(panel, {
       backgroundColor: cssVar('--surface') || null,
       useCORS: true,
-      scale: 2,
-      width: targetW,
-      height: targetH,
-      windowWidth: targetW,
-      windowHeight: targetH
+      width: width,
+      height: height,
+      windowWidth: width,
+      windowHeight: height,
+      scale: scale
     }).then(function(canvas){
       var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
     }).catch(function(err){
       console.error('Export failed', err);
       alert('Sorry, something went wrong while exporting.');
-    }).finally(function(){ cloneWrap.remove(); overlay.style.display='none'; });
+    }).finally(function(){
+      document.body.classList.remove('exporting');
+    });
   });
 })();
 
-/* ---------- Color picker improvements ---------- */
+/* ---------- Color picker preview ---------- */
 (function(){
   var colorInput = $('#nameColor');
   var preview = $('#colorPreview');
@@ -876,7 +841,7 @@ on($('#trashClear'),'click', function(){
   on(document,'DOMContentLoaded', updatePreview);
 })();
 
-/* ---------- Autosave (localStorage), cleared on hard refresh ---------- */
+/* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
   var state={ rows:[], tray:[], version:1 };
@@ -971,7 +936,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Device-specific tips
+  // Device-specific tips (no "Help" word)
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
