@@ -1,11 +1,9 @@
 /* =========================================================
    Tier Maker — CSS (updated)
-   - Larger, readable tier labels (auto-resize 34→14px)
-   - Stable row heights (fit one circle row; grow only when needed)
-   - PNG export matches on-screen view exactly
-   - Title pencil: no background; clearer edit affordance
-   - Radial picker scrolling fixed (JS side + touch-action here)
-   - Added .sr-only to match JS live region
+   - Labels center-locked; rows stable
+   - PNG export matches on-screen view; hides edit UI
+   - Curated pre-render colors handled in JS
+   - Mobile radial picker touch behavior
 ========================================================= */
 
 /* ---------- Reset ---------- */
@@ -37,7 +35,7 @@ a{color:inherit;text-decoration:none}
   --accent:#6b5fff; --brand:#000; --neon:#c8ff45;
 }
 
-/* legacy from earlier approach; harmless if present */
+/* legacy lock class (used by picker) */
 body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 /* ---------- Layout ---------- */
@@ -108,6 +106,13 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
   border-bottom:2px solid rgba(139,125,255,.85);
 }
 
+/* Hide title/edit UI when exporting.
+   Also hide entire title row if the title is empty (via .exporting.no-title on body) */
+.exporting .title-pen{display:none!important}
+.exporting .board-title[contenteditable]{border:0!important}
+.exporting .board-title[contenteditable]:empty::before{content:''}
+.exporting.no-title .board-title-wrap{display:none!important}
+
 #tierBoard{display:grid;gap:12px}
 .tier-row{display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch}
 @media (max-width:768px){.tier-row{grid-template-columns:140px 1fr}}
@@ -116,27 +121,35 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .tier-label{
   position:relative;
   border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow);
-  padding:12px; display:grid; place-items:center; 
-  /* Tall enough to comfortably fit one row of 110px circles; rows grow only when needed */
-  min-height:calc(110px + 28px);
+  padding:12px; 
+  display:flex; align-items:center; justify-content:center; /* true centering */
+  min-height:calc(110px + 28px); /* fits one 110px circle row; row grows on second */
   overflow:hidden;
 }
 .label-chip{
-  position:relative;width:100%;max-width:100%;
+  position:relative; width:100%; max-width:100%;
   background:transparent;
   color:#111; /* JS will adjust for contrast */
-  display:flex;align-items:center;justify-content:center;
+  display:flex; align-items:center; justify-content:center;
   font-weight:900;
-  font-size:32px;           /* larger default; JS will step down if needed */
+  font-size:32px;           /* will step down in JS */
   line-height:1.15;
-  text-transform:uppercase;letter-spacing:.5px;user-select:none;
-  white-space:normal;       /* paragraph-style wrapping */
+  text-transform:uppercase; letter-spacing:.5px; user-select:none;
+  white-space:normal;       /* paragraph-style */
   text-align:center; padding:6px 8px;
   overflow:hidden;
   word-break:break-word; hyphens:auto; overflow-wrap:break-word;
 }
 
-/* Row delete X */
+/* Row drag handle (positioned so it never affects centering) */
+.row-handle{
+  position:absolute; left:8px; top:8px; width:32px; height:32px; border-radius:8px;
+  color:rgba(255,255,255,.65);
+  display:grid; place-items:center;
+}
+.row-handle svg{width:18px;height:18px;fill:currentColor;opacity:.65}
+
+/* Row delete X (absolute; doesn’t affect centering) */
 .row-del{
   position:absolute;right:8px;bottom:8px;width:36px;height:36px;border-radius:9px;
   color:#fff;display:grid;place-items:center;
@@ -145,15 +158,14 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 }
 .row-del svg{width:16px;height:16px;fill:currentColor}
 
-/* Hide delete buttons during export so image matches intended look */
-.exporting .row-del{display:none !important;}
+/* Hide delete buttons during export to clean the PNG */
+.exporting .row-del{display:none!important}
 
 /* Drops */
 .tier-drop{
   background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
   padding:14px;display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
   align-content:start;gap:14px;
-  /* Matches one row of 110px circles + vertical padding; only grows on second row */
   min-height:calc(110px + 28px);
 }
 .tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
@@ -191,11 +203,10 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 
 /* ---------- A11y ---------- */
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
-/* Match the live region class used in JS */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 
 /* ---------- Radial picker (mobile) ---------- */
-.radial{position:fixed;inset:0;z-index:60;pointer-events:auto;filter:drop-shadow(0 8px 24px rgba(0,0,0,.35)); touch-action:none;}
+.radial{position:fixed;inset:0;z-index:60;pointer-events:auto;filter:drop-shadow(0 8px 24px rgba(0,0,0,.35));touch-action:none;}
 .radial.hidden{display:none}
 .radial-options{position:relative;width:100%;height:100%}
 .radial-option{position:absolute;width:56px;height:56px;border-radius:999px;transform:translate(-50%,-50%)}
