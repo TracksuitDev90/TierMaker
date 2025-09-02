@@ -1,12 +1,10 @@
 /* =========================================================
-   Tier Maker — JS (7-upgrade build)
-   1) PNG export = exact on-screen sizes + text
-   2) Color picker preview + input handler (uses chosen color)
-   3) Autosave to localStorage; cleared on hard page reload
-   4) Undo records & restores reorders (tokens + rows)
-   5) Export feedback overlay + html2canvas presence check
-   6) A11y: ARIA labels, keyboard moves, live help announcements
-   7) Tier UX: editable label hint, reorder handle, delete confirm
+   Tier Maker — JS (7-upgrade build • patch A)
+   + Full-width colored tier label column (chip text auto-fit up to 2 lines)
+   + Stronger row tint so tiers are more visually distinct
+   + PNG export uses exact #boardPanel rect (width+height) and DPR; hides UI
+   + Title spacing is controlled in CSS (see CSS patch)
+   (Everything else kept: radial picker, autosave, palettes, a11y, undo, etc.)
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -108,9 +106,14 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
     // re-tint row backgrounds based on label color
     $$('.tier-row').forEach(function(row){
-      var chip=$('.label-chip',row), drop=$('.tier-drop',row);
+      var chip=$('.label-chip',row), drop=$('.tier-drop',row), lbl=$('.tier-label',row);
+      var col = chip && chip.dataset.color ? chip.dataset.color : '#8b7dff';
+      if (lbl) lbl.style.background = col; // full-width colored column
       if (drop && drop.dataset.manual!=='true'){
-        drop.style.background = tintFrom(chip && chip.dataset.color ? chip.dataset.color : '#8b7dff');
+        drop.style.background = tintFrom(col);
+      }
+      if (chip) {
+        chip.style.color = contrastColor(col);
       }
     });
   }
@@ -173,13 +176,15 @@ function buildRowDom(){
   drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
 
   row.appendChild(labelWrap); row.appendChild(drop);
-  return { row: row, chip: chip, del: del, drop: drop, handle: handle };
+  return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
 }
+
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
   var a=hexToRgb(surface), b=hexToRgb(color);
   var dark = document.documentElement.getAttribute('data-theme')!=='light';
-  var amt = dark?0.14:0.09;
+  // slightly stronger tint to make rows more visually distinct
+  var amt = dark?0.22:0.14;
   return rgbToHex(
     Math.round(a.r+(b.r-a.r)*amt),
     Math.round(a.g+(b.g-a.g)*amt),
@@ -188,22 +193,73 @@ function tintFrom(color){
 }
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
+/* ---------- Fit tier label text (up to 2 lines, fixed column) ---------- */
+function fitChipText(chip){
+  if(!chip) return;
+  var wrap = chip.parentElement; // .tier-label
+  // visual safety paddings
+  var pad = 12;
+  var W = Math.max(1, wrap.clientWidth - pad*2);
+  var H = Math.max(1, wrap.clientHeight - pad*2);
+
+  // layout rules for contenteditable
+  var s = chip.style;
+  s.whiteSpace='normal';
+  s.wordBreak='break-word';
+  s.hyphens='auto';
+  s.overflow='hidden';
+  s.display='flex';
+  s.alignItems='center';
+  s.justifyContent='center';
+  s.textAlign='center';
+  s.padding = '0 ' + pad + 'px';
+  s.lineHeight='1.05';
+
+  // binary search font size that fits in <= 2 lines
+  var lo = 12;
+  var hi = Math.floor(H * 0.72); // generous starting point
+  var best = lo;
+
+  function fits(px){
+    s.fontSize = px + 'px';
+    var lineH = px * 1.05;
+    // temporarily measure
+    var h = chip.scrollHeight;
+    var w = chip.scrollWidth;
+    var lines = Math.ceil(h / lineH);
+    return (w <= W * 1.02) && (h <= Math.min(H, lineH*2 + 2)) && (lines <= 2);
+  }
+
+  while (lo <= hi){
+    var mid = (lo + hi) >> 1;
+    if (fits(mid)){ best = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  s.fontSize = best + 'px';
+}
+
 /* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
-  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle;
+  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap = dom.labelWrap;
 
   chip.textContent = cfg.label;
   chip.dataset.color = cfg.color;
-  chip.style.background = cfg.color;
+
+  // FULL column color + contrast text on the chip
+  labelWrap.style.background = cfg.color;
+  chip.style.background = 'transparent';
   chip.style.color = contrastColor(cfg.color);
+
+  // delete "X" darker tone
   del.style.background = darken(cfg.color, 0.35);
 
+  // stronger colored row tint
   var tint = tintFrom(cfg.color);
   drop.style.background = tint; drop.dataset.manual = 'false';
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', queueAutosave);
+  on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
 
   on(del,'click', function(){
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
@@ -217,6 +273,10 @@ function createRow(cfg){
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
+
+  // initial fit now that sizes exist
+  fitChipText(chip);
+
   return node;
 }
 
@@ -233,7 +293,7 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names (incl. Kikki, Tems, TomTom) ---------- */
+/* ---------- Preset names (Temz, Versse included) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
@@ -262,7 +322,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Live label fitter (no wraps, centered) ---------- */
+/* ---------- Live label fitter (names inside circles) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -278,7 +338,10 @@ function fitLiveLabel(lbl){
   while(lo<=hi){ var mid=(lo+hi)>>1; if(fits(mid)){ best=mid; lo=mid+1; } else hi=mid-1; }
   s.fontSize=best+'px';
 }
-function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
+function refitAllLabels(){
+  $$('.token .label').forEach(fitLiveLabel);
+  $$('.tier-label .label-chip').forEach(fitChipText);
+}
 on(window,'resize', debounce(refitAllLabels, 120));
 
 /* ---------- Tokens ---------- */
@@ -410,7 +473,6 @@ on($('#undoBtn'),'click', function(){
   if (last.type==='move'){
     performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
   } else if (last.type==='row'){
-    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
@@ -419,17 +481,15 @@ on($('#undoBtn'),'click', function(){
       else container.appendChild(r);
     }
   } else if (last.type==='row-delete'){
-    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
       var row=tmp.firstElementChild;
       container.appendChild(row);
-      // rewire the row we just injected
-      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
+      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row), lbl=$('.tier-label',row);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', queueAutosave);
+      on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
       on(del,'click', function(){
         if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
         var tokens = $$('.token', drop);
@@ -437,6 +497,12 @@ on($('#undoBtn'),'click', function(){
         row.remove(); refreshRadialOptions(); queueAutosave();
         historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
       });
+      if (lbl && chip && chip.dataset && chip.dataset.color){
+        var col = chip.dataset.color;
+        lbl.style.background = col; chip.style.color = contrastColor(col);
+        drop.style.background = tintFrom(col);
+      }
+      fitChipText(chip);
     }
   }
   updateUndo(); queueAutosave();
@@ -510,7 +576,6 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
-        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -537,7 +602,6 @@ function enablePointerDrag(node){
 
 /* ---------- Legacy mouse/touch fallback (desktop) ---------- */
 function enableMouseTouchDragFallback(node){
-  // intentionally omitted (PointerEvent supported widely). Kept for safety:
   on(node,'mousedown', function(e){ e.preventDefault(); });
 }
 
@@ -582,10 +646,7 @@ function enableMobileTouchDrag(node){
 function enableRowReorder(handle, row){
   var placeholder=null, originNext=null;
 
-  function arm(e){
-    row.setAttribute('draggable','true');
-    originNext = row.nextElementSibling;
-  }
+  function arm(){ row.setAttribute('draggable','true'); originNext = row.nextElementSibling; }
   on(handle,'mousedown', arm);
   on(handle,'touchstart', arm, _supportsPassive?{passive:true}:false);
 
@@ -607,7 +668,6 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
-    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -726,7 +786,7 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT: exact on-screen sizes ---------- */
+/* ---------- EXPORT: exact on-screen sizes (identical desktop/mobile) ---------- */
 (function(){
   // feedback overlay (injected)
   var overlay=document.createElement('div');
@@ -737,25 +797,32 @@ on($('#trashClear'),'click', function(){
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
   on($('#saveBtn'),'click', function(){
-    // check library
     if (typeof html2canvas !== 'function'){
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
-    // tidy UI
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
-    // clone the *board panel* exactly as-is (no size/label changes)
     var panel = $('#boardPanel');
+    var rect = panel.getBoundingClientRect();
+
+    // hide UI bits on the live page during capture
+    document.body.classList.add('exporting');
+
+    // offscreen clone of *exact* panel
     var cloneWrap = document.createElement('div');
     cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
 
     var clone = panel.cloneNode(true);
-    clone.style.width = panel.getBoundingClientRect().width + 'px'; // mirror current width
-    // hide delete X only
-    var s = document.createElement('style'); s.textContent='.row-del{display:none !important;}'; clone.appendChild(s);
+    clone.style.width  = rect.width  + 'px';
+    clone.style.height = rect.height + 'px';
 
-    // drop empty title
+    // style inside clone (just in case)
+    var s = document.createElement('style');
+    s.textContent='.row-del{display:none !important}';
+    clone.appendChild(s);
+
+    // drop empty title from clone
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
       var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -764,12 +831,17 @@ on($('#trashClear'),'click', function(){
     cloneWrap.appendChild(clone); document.body.appendChild(cloneWrap);
     overlay.style.display='flex';
 
+    var dpr = Math.max(1, window.devicePixelRatio || 1);
     html2canvas(clone, {
       backgroundColor: cssVar('--surface') || null,
       useCORS: true,
-      scale: 2,
-      width: clone.getBoundingClientRect().width,
-      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0)
+      scale: dpr,
+      width: rect.width,
+      height: rect.height,
+      windowWidth: rect.width,
+      windowHeight: rect.height,
+      scrollX: 0,
+      scrollY: 0
     }).then(function(canvas){
       var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
@@ -778,7 +850,7 @@ on($('#trashClear'),'click', function(){
       console.error('Export failed', err);
       alert('Sorry, something went wrong while exporting.');
       cloneWrap.remove();
-    }).finally(function(){ overlay.style.display='none'; });
+    }).finally(function(){ overlay.style.display='none'; document.body.classList.remove('exporting'); });
   });
 })();
 
@@ -787,7 +859,6 @@ on($('#trashClear'),'click', function(){
   var colorInput = $('#nameColor');
   var preview = $('#colorPreview');
   if (!preview) {
-    // try to find a sibling; if not, create a little ring preview
     var addBtn = $('#addNameBtn');
     preview=document.createElement('span'); preview.id='colorPreview';
     preview.setAttribute('aria-hidden','true');
@@ -803,10 +874,10 @@ on($('#trashClear'),'click', function(){
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
   var state={ rows:[], tray:[], version:1 };
-  // rows & tokens
   $$('.tier-row').forEach(function(r){
-    var chip=$('.label-chip',r);
-    var entry={ label: chip.textContent, color: chip.dataset.color || '#8b7dff', items: [] };
+    var chip=$('.label-chip',r), lbl=$('.tier-label',r);
+    var color = (chip && chip.dataset.color) || '#8b7dff';
+    var entry={ label: chip.textContent, color: color, items: [] };
     $$('.token', r.querySelector('.tier-drop')).forEach(function(tok){
       if (tok.querySelector('img')){
         entry.items.push({t:'i', src: tok.querySelector('img').src});
@@ -816,7 +887,6 @@ function serializeState(){
     });
     state.rows.push(entry);
   });
-  // tray tokens
   $$('#tray .token').forEach(function(tok){
     if (tok.querySelector('img')){
       state.tray.push({t:'i', src: tok.querySelector('img').src});
@@ -838,7 +908,6 @@ function restoreState(state){
       else drop.appendChild(buildNameToken(it.text, it.color, true));
     });
   });
-  // tray
   $('#tray').innerHTML='';
   (state.tray||[]).forEach(function(it){
     if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
@@ -861,36 +930,31 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   board = $('#tierBoard'); tray = $('#tray');
 
-  // Try restore
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
-    announce('Restored your last session.'); 
+    announce('Restored your last session.');
   } else {
-    // build defaults
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
-  // add tier
   on($('#addTierBtn'),'click', function(){
     board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
   });
 
-  // add custom name
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value; // capture before resetting
+    var chosen = colorInput.value;
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
-    colorInput.value = nextPreset(); // rotate to another good color
+    colorInput.value = nextPreset();
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
     refitAllLabels(); queueAutosave();
   });
 
-  // add images
   on($('#imageInput'),'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
@@ -900,7 +964,6 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help (a11y: announceable)
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
@@ -913,10 +976,8 @@ document.addEventListener('DOMContentLoaded', function start(){
       ' Click the tier label to edit it. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
   }
 
-  // click-to-place from tray
   enableClickToPlace(tray);
 
-  // announce ready
   announce('Ready.');
   updateUndo();
   refitAllLabels();
