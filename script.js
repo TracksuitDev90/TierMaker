@@ -1,7 +1,11 @@
 /* =========================================================
-   Tier Maker — JS (7-upgrade build + two fixes)
-   • Export on phones renders a wide desktop-style board (no stacked rows)
-   • Tier label letter starts HUGE and auto-shrinks as you type
+   Tier Maker — JS (7-upgrade build + tier-label/picker tweaks)
+   KEEPING: export, autosave, undo, keyboard, mobile radial, etc.
+   CHANGES THIS PATCH:
+   - Entire label column takes tier color; text perfectly centered.
+   - Discrete label font steps 22→16→14→12→min10 with wrapping.
+   - Picker: scroll-lock while open, slight right nudge for left edge,
+             light-mode inverted dot styles (CSS), and no creeping.
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -86,7 +90,7 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
   );
 }
 
-/* ---------- Theme toggle ---------- */
+/* ---------- Theme toggle keeps current styles in sync ---------- */
 (function(){
   var root=document.documentElement;
   var toggle=$('#themeToggle'); if(!toggle) return;
@@ -101,10 +105,12 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
     if(icon) icon.innerHTML = (target==='Light'
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
+    // re-tint row backgrounds based on label color
     $$('.tier-row').forEach(function(row){
       var chip=$('.label-chip',row), drop=$('.tier-drop',row);
+      var color=(chip && chip.dataset.color) ? chip.dataset.color : '#8b7dff';
       if (drop && drop.dataset.manual!=='true'){
-        drop.style.background = tintFrom(chip && chip.dataset.color ? chip.dataset.color : '#8b7dff');
+        drop.style.background = tintFrom(color);
       }
     });
   }
@@ -167,7 +173,7 @@ function buildRowDom(){
   drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
 
   row.appendChild(labelWrap); row.appendChild(drop);
-  return { row: row, chip: chip, del: del, drop: drop, handle: handle };
+  return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
 }
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
@@ -182,50 +188,52 @@ function tintFrom(color){
 }
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
-/* ---------- Fit tier label text (HUGE by default, shrink to fit) ---------- */
+/* ---------- Chip text fitter (discrete steps + wrap) ---------- */
+var CHIP_STEPS=[22,16,14,12,10];
 function fitChipText(chip){
   if(!chip) return;
-  // measure box
-  var W = chip.clientWidth, H = chip.clientHeight;
-  // start very large so single characters look huge
-  var minPx = 14, maxPx = Math.floor(H * 0.78);
-  var txtLen = chip.textContent.trim().length;
-  if (txtLen <= 1) maxPx = Math.floor(H * 0.86); // even bigger for one letter
-
-  chip.style.whiteSpace = 'nowrap';
-  chip.style.lineHeight = '1';
-  chip.style.wordBreak = 'normal';
-  chip.style.hyphens = 'none';
-  chip.style.overflow = 'hidden';
-
-  function fits(px){
-    chip.style.fontSize = px + 'px';
-    return chip.scrollWidth <= (W - 8) && chip.scrollHeight <= (H - 6);
+  // ensure measuring environment
+  chip.style.whiteSpace='normal';
+  chip.style.lineHeight='1.1';
+  chip.style.display='flex';
+  chip.style.alignItems='center';
+  chip.style.justifyContent='center';
+  chip.style.textAlign='center';
+  chip.style.overflow='hidden';
+  var wrap = chip.parentElement; // .tier-label
+  var maxW = wrap.clientWidth - 16; // padding allowance
+  var maxH = wrap.clientHeight - 16;
+  for(var i=0;i<CHIP_STEPS.length;i++){
+    var px = CHIP_STEPS[i];
+    chip.style.fontSize = px+'px';
+    // allow wrapping; ensure both width and height fit
+    if (chip.scrollWidth <= maxW && chip.scrollHeight <= maxH){
+      break;
+    }
   }
-
-  var best = minPx, lo = minPx, hi = maxPx;
-  while (lo <= hi){
-    var mid = (lo + hi) >> 1;
-    if (fits(mid)){ best = mid; lo = mid + 1; }
-    else { hi = mid - 1; }
-  }
-  chip.style.fontSize = best + 'px';
 }
 
 /* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
-  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle;
+  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap=dom.labelWrap;
 
   chip.textContent = cfg.label;
   chip.dataset.color = cfg.color;
-  chip.style.background = cfg.color;
-  chip.style.color = contrastColor(cfg.color);
+
+  // NEW: color the entire label column
+  labelWrap.style.background = cfg.color;
+  labelWrap.dataset.color = cfg.color;
+  chip.style.background = 'transparent';
+  var chipTextColor = contrastColor(cfg.color);
+  chip.style.color = chipTextColor;
+
   del.style.background = darken(cfg.color, 0.35);
-  fitChipText(chip);
 
   var tint = tintFrom(cfg.color);
   drop.style.background = tint; drop.dataset.manual = 'false';
+
+  fitChipText(chip);
 
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
   on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
@@ -236,7 +244,7 @@ function createRow(cfg){
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
     node.remove(); refreshRadialOptions(); queueAutosave();
-    historyStack.push({type:'row-delete', rowHTML: node.outerHTML});
+    historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); // simple restore via HTML
     updateUndo();
   });
 
@@ -258,14 +266,14 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names ---------- */
+/* ---------- Preset names (corrected Temz, Versse) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette ---------- */
+/* ---------- Palette (already tuned earlier) ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -287,7 +295,7 @@ function ensureForBlack(hex){
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-/* ---------- Live label fitter (tokens) ---------- */
+/* ---------- Size-to-fit for token labels (unchanged) ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
   var token = lbl.parentElement;
@@ -313,7 +321,7 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
-  // keyboard move/reorder
+  // keyboard: Alt+←/→ reorder within row, Alt+↑/↓ move to prev/next row
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -324,14 +332,23 @@ function buildTokenBase(){
       var sib = (e.key==='ArrowLeft') ? el.previousElementSibling : el.nextElementSibling;
       if(!sib) return;
       var beforeTok = (e.key==='ArrowLeft') ? sib : sib.nextElementSibling;
-      moveToken(el, zone, beforeTok); el.focus();
+      moveToken(el, zone, beforeTok);
+      el.focus();
     } else if(e.key==='ArrowUp' || e.key==='ArrowDown'){
       e.preventDefault();
       var rows = $$('.tier-row');
       var row = el.closest('.tier-row');
       var idx = rows.indexOf ? rows.indexOf(row) : rows.findIndex(function(r){return r===row;});
-      var destRow = (e.key==='ArrowUp') ? (row ? rows[idx-1] : rows[rows.length-1]) : (row ? rows[idx+1] : rows[0]);
-      if(destRow){ moveToken(el, destRow.querySelector('.tier-drop'), null); el.focus(); }
+      var destRow = null;
+      if(e.key==='ArrowUp'){
+        destRow = row ? rows[idx-1] : rows[rows.length-1];
+      }else{
+        destRow = row ? rows[idx+1] : rows[0];
+      }
+      if(destRow){
+        moveToken(el, destRow.querySelector('.tier-drop'), null);
+        el.focus();
+      }
     }
   });
 
@@ -374,13 +391,21 @@ function buildImageToken(src, alt){
 }
 
 /* ---------- History (Undo) ---------- */
-var historyStack = [];
+var historyStack = []; // heterogeneous: {type:'move', ...} | {type:'row',...} | {type:'row-delete', html}
 function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
+
+/* snapshot before a move (for reorders) */
 function snapshotBefore(node){
   var parent = node.parentElement;
   var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
-  return { itemId: node.id || (node.id=uid()), fromId: parent.id || (parent.id=uid()), fromBeforeId: fromBefore };
+  return {
+    itemId: node.id || (node.id=uid()),
+    fromId: parent.id || (parent.id=uid()),
+    fromBeforeId: fromBefore
+  };
 }
+
+/* generic token move (records moves & reorders) */
 function moveToken(node, toZone, beforeTok){
   var snap = snapshotBefore(node);
   var toId = toZone.id || (toZone.id=uid());
@@ -389,9 +414,18 @@ function moveToken(node, toZone, beforeTok){
   flipZones([originParent, toZone], function(){
     if(beforeTok) toZone.insertBefore(node,beforeTok); else toZone.appendChild(node);
   });
-  historyStack.push({ type:'move', itemId:snap.itemId, fromId:snap.fromId, fromBeforeId:snap.fromBeforeId, toId:toId, toBeforeId:beforeId });
+  historyStack.push({
+    type:'move',
+    itemId:snap.itemId,
+    fromId:snap.fromId,
+    fromBeforeId:snap.fromBeforeId,
+    toId:toId,
+    toBeforeId:beforeId
+  });
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
 }
+
+/* perform a move into a parent before an element id (or append) */
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
   if(!item||!parent) return;
@@ -403,23 +437,40 @@ function performMoveTo(itemId, parentId, beforeId){
     parent.appendChild(item);
   });
 }
+
+/* UNDO */
 on($('#undoBtn'),'click', function(){
   var last = historyStack.pop(); if (!last) return;
-  if (last.type==='move'){ performMoveTo(last.itemId, last.fromId, last.fromBeforeId); }
-  else if (last.type==='row'){
+  if (last.type==='move'){
+    performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
+  } else if (last.type==='row'){
+    // move row back to its previous position
     var r=document.getElementById(last.rowId);
     var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
     var container = $('#tierBoard');
-    if (r && container){ if(before && before.parentElement===container) container.insertBefore(r,before); else container.appendChild(r); }
+    if (r && container){
+      if(before && before.parentElement===container) container.insertBefore(r,before);
+      else container.appendChild(r);
+    }
   } else if (last.type==='row-delete'){
+    // re-create deleted row after the last one
     var container = $('#tierBoard');
     if(container){
       var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
-      var row=tmp.firstElementChild; container.appendChild(row);
+      var row=tmp.firstElementChild;
+      container.appendChild(row);
+      // rewire the row we just injected
       var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
       on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
+      on(del,'click', function(){
+        if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
+        var tokens = $$('.token', drop);
+        flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
+        row.remove(); refreshRadialOptions(); queueAutosave();
+        historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
+      });
     }
   }
   updateUndo(); queueAutosave();
@@ -441,7 +492,7 @@ function insertBeforeForPoint(zone,x,y,except){
 
 /* ---------- Click-to-place ---------- */
 function enableClickToPlace(zone){
-  on(zone,'click', function(){
+  on(zone,'click', function(e){
     var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
     var selected = $('.token.selected'); if (!selected) return;
     if(isSmall() && !selected.closest('#tray')) return;
@@ -493,6 +544,7 @@ function enablePointerDrag(node){
         moveToken(node, zone, beforeTok);
         node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
       } else {
+        // revert
         if (originNext && originNext.parentElement===node.parentElement) {
           moveToken(node, node.parentElement, originNext);
         }
@@ -585,6 +637,7 @@ function enableRowReorder(handle, row){
     row.removeAttribute('draggable'); placeholder=null;
     document.body.classList.remove('dragging-item');
 
+    // record row reorder
     historyStack.push({
       type:'row',
       rowId: row.id,
@@ -610,6 +663,8 @@ var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
+var _radialGeo = [];
+var _scrollLockY = 0;
 
 function rowCount(){ return $$('.tier-row').length; }
 function uniformCenter(cx, cy, R){
@@ -617,13 +672,30 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
+function lockScroll(){
+  _scrollLockY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.classList.add('radial-lock');
+  document.body.style.top = (-_scrollLockY)+'px';
+}
+function unlockScroll(){
+  document.body.classList.remove('radial-lock');
+  document.body.style.top = '';
+  window.scrollTo(0, _scrollLockY);
+}
+
 function openRadial(token){
   if(!radial||!isSmall()) return;
   radialForToken = token;
 
+  // lock page to prevent creeping while tapping multiple targets
+  lockScroll();
+
   var rect = token.getBoundingClientRect();
   var cx = rect.left + rect.width/2;
   var cy = rect.top + rect.height/2;
+
+  // nudge right if near the left edge so options don't get squished
+  var nudgeX = (rect.left < 24) ? 18 : 0;
 
   var rows = $$('.tier-row');
   var labels = rows.map(function(r){ return rowLabel(r); });
@@ -632,7 +704,7 @@ function openRadial(token){
   var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
   var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
   var R=Math.max(BASE_R, need);
-  var center=uniformCenter(cx,cy,R);
+  var center=uniformCenter(cx + nudgeX, cy, R);
 
   var positions=[];
   for (var i=0;i<N;i++){
@@ -640,9 +712,10 @@ function openRadial(token){
     positions.push({ i:i, x:center.x+R*Math.cos(ang), y:center.y+R*Math.sin(ang) });
   }
   positions.sort(function(a,b){ return a.x - b.x; });
+  _radialGeo = [];
 
-  radialCloseBtn.style.left = cx+'px';
-  radialCloseBtn.style.top  = cy+'px';
+  radialCloseBtn.style.left = center.x+'px';
+  radialCloseBtn.style.top  = center.y+'px';
 
   radialOpts.innerHTML = '';
   for (let j=0;j<N;j++){
@@ -661,6 +734,7 @@ function openRadial(token){
       on(btn,'pointerdown', function(e){ e.preventDefault(); });
       on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
       radialOpts.appendChild(btn);
+      _radialGeo.push({row:row, btn:btn});
     })(j);
   }
 
@@ -675,6 +749,7 @@ function openRadial(token){
     closeRadial();
   }
   radial.addEventListener('pointerdown',backdrop,{passive:false});
+  radial._backdropHandler=backdrop;
 
   radial.classList.remove('hidden');
   radial.classList.add('visible','show');
@@ -684,20 +759,25 @@ function openRadial(token){
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
 function closeRadial(){
   if(!radial) return;
+  if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden');
   radial.classList.remove('visible','show');
   radial.setAttribute('aria-hidden','true');
+  radialForToken = null; _radialGeo = [];
+  unlockScroll();
 }
+on(window,'resize', refreshRadialOptions);
 
-/* ---------- Clear ---------- */
+/* ---------- Clear / Undo buttons ---------- */
 on($('#trashClear'),'click', function(){
   if (!confirm('Clear the entire tier board? Items move back to Image Storage.')) return;
   $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
   queueAutosave();
 });
 
-/* ---------- EXPORT: FORCE WIDE LAYOUT (desktop look) ---------- */
+/* ---------- EXPORT: exact on-screen sizes ---------- */
 (function(){
+  // feedback overlay (injected)
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -705,11 +785,10 @@ on($('#trashClear'),'click', function(){
   document.body.appendChild(overlay);
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
-  var EXPORT_WIDTH = 1200; // desktop-like width
-
   on($('#saveBtn'),'click', function(){
-    if (typeof html2canvas !== 'function'){ alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return; }
-
+    if (typeof html2canvas !== 'function'){
+      alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
+    }
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
@@ -718,20 +797,9 @@ on($('#trashClear'),'click', function(){
     cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
 
     var clone = panel.cloneNode(true);
+    clone.style.width = panel.getBoundingClientRect().width + 'px';
+    var s = document.createElement('style'); s.textContent='.row-del{display:none !important;}'; clone.appendChild(s);
 
-    // Force desktop geometry in the clone
-    var s = document.createElement('style');
-    s.textContent = `
-      .row-del, .radial { display:none !important; }
-      .wrap{ max-width:${EXPORT_WIDTH}px !important; }
-      #boardPanel{ width:${EXPORT_WIDTH}px !important; max-width:${EXPORT_WIDTH}px !important; }
-      .tier-row{ grid-template-columns:160px 1fr !important; } /* ensure desktop row layout */
-    `;
-    clone.appendChild(s);
-
-    clone.style.width = EXPORT_WIDTH + 'px';
-
-    // Drop empty title in export
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
       var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -744,8 +812,8 @@ on($('#trashClear'),'click', function(){
       backgroundColor: cssVar('--surface') || null,
       useCORS: true,
       scale: 2,
-      width: EXPORT_WIDTH,
-      windowWidth: EXPORT_WIDTH
+      width: clone.getBoundingClientRect().width,
+      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0)
     }).then(function(canvas){
       var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
@@ -758,7 +826,7 @@ on($('#trashClear'),'click', function(){
   });
 })();
 
-/* ---------- Color picker preview ---------- */
+/* ---------- Color picker improvements ---------- */
 (function(){
   var colorInput = $('#nameColor');
   var preview = $('#colorPreview');
@@ -774,22 +842,29 @@ on($('#trashClear'),'click', function(){
   on(document,'DOMContentLoaded', updatePreview);
 })();
 
-/* ---------- Autosave ---------- */
+/* ---------- Autosave (localStorage), cleared on hard refresh ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
   var state={ rows:[], tray:[], version:1 };
   $$('.tier-row').forEach(function(r){
-    var chip=$('.label-chip',r);
-    var entry={ label: chip.textContent, color: chip.dataset.color || '#8b7dff', items: [] };
+    var chip=$('.label-chip',r), wrap=$('.tier-label',r);
+    var color = (chip && chip.dataset.color) || (wrap && wrap.dataset.color) || '#8b7dff';
+    var entry={ label: chip.textContent, color: color, items: [] };
     $$('.token', r.querySelector('.tier-drop')).forEach(function(tok){
-      if (tok.querySelector('img')) entry.items.push({t:'i', src: tok.querySelector('img').src});
-      else entry.items.push({t:'n', text: $('.label',tok).textContent, color: tok.style.background});
+      if (tok.querySelector('img')){
+        entry.items.push({t:'i', src: tok.querySelector('img').src});
+      } else {
+        entry.items.push({t:'n', text: $('.label',tok).textContent, color: tok.style.background});
+      }
     });
     state.rows.push(entry);
   });
   $$('#tray .token').forEach(function(tok){
-    if (tok.querySelector('img')) state.tray.push({t:'i', src: tok.querySelector('img').src});
-    else state.tray.push({t:'n', text: $('.label',tok).textContent, color: tok.style.background});
+    if (tok.querySelector('img')){
+      state.tray.push({t:'i', src: tok.querySelector('img').src});
+    } else {
+      state.tray.push({t:'n', text: $('.label',tok).textContent, color: tok.style.background});
+    }
   });
   return state;
 }
@@ -830,14 +905,14 @@ document.addEventListener('DOMContentLoaded', function start(){
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
-    announce('Restored your last session.');
+    announce('Restored your last session.'); 
   } else {
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
   on($('#addTierBtn'),'click', function(){
-    board.appendChild(createRow({label:'S', color: nextTierColor()})); // default to a big letter
+    board.appendChild(createRow({label:'NEW', color: nextTierColor()}));
     refreshRadialOptions(); queueAutosave();
   });
 
@@ -846,7 +921,8 @@ document.addEventListener('DOMContentLoaded', function start(){
     var name = nameInput.value.trim(); if (!name) return;
     var chosen = colorInput.value;
     tray.appendChild(buildNameToken(name, chosen, false));
-    nameInput.value=''; colorInput.value = nextPreset();
+    nameInput.value='';
+    colorInput.value = nextPreset();
     var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
     refitAllLabels(); queueAutosave();
   });
@@ -865,14 +941,16 @@ document.addEventListener('DOMContentLoaded', function start(){
     help.setAttribute('role','note');
     help.setAttribute('aria-live','polite');
     help.innerHTML =
+      '<strong>Help</strong><br>' +
       (isSmall()
-       ? '<strong>Phone:</strong> tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
-       : '<strong>Desktop/Tablet:</strong> drag circles into rows. Reorder by dragging items or use Alt+Arrow keys. Drag the grip to reorder rows.')
-      + ' Click the tier label to edit it. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
+       ? 'Phone: tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
+       : 'Desktop/iPad: drag circles into rows. Reorder by dragging items or use Alt+Arrow keys. Drag the grip to reorder rows.') +
+      ' Click the tier label to edit it. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
   }
 
   enableClickToPlace(tray);
   announce('Ready.');
   updateUndo();
-  refitAllLabels(); refitAllChips();
+  refitAllLabels();
+  refitAllChips();
 });
