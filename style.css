@@ -1,3 +1,13 @@
+/* =========================================================
+   Tier Maker — CSS (updated)
+   - Larger, readable tier labels (auto-resize 34→14px)
+   - Stable row heights (fit one circle row; grow only when needed)
+   - PNG export matches on-screen view exactly
+   - Title pencil: no background; clearer edit affordance
+   - Radial picker scrolling fixed (JS side + touch-action here)
+   - Added .sr-only to match JS live region
+========================================================= */
+
 /* ---------- Reset ---------- */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -27,7 +37,7 @@ a{color:inherit;text-decoration:none}
   --accent:#6b5fff; --brand:#000; --neon:#c8ff45;
 }
 
-/* prevent page creeping while radial picker is open */
+/* legacy from earlier approach; harmless if present */
 body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 /* ---------- Layout ---------- */
@@ -81,22 +91,35 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .title-pen{
   display:inline-flex;align-items:center;justify-content:center;
   width:28px;height:28px;border-radius:8px;
-  background:var(--surface);border:1px solid var(--border);
-  margin-right:4px;
+  background:transparent;border:0;
+  margin-right:4px; opacity:.75;
 }
-.title-pen svg{width:18px;height:18px;fill:currentColor;opacity:.75;display:block}
+.title-pen:hover{opacity:1}
+.title-pen svg{width:18px;height:18px;fill:currentColor;opacity:.9;display:block}
+
 .board-title{font-size:clamp(20px,2.2vw,28px);font-weight:900;margin:0}
 .board-title[contenteditable]:empty::before{content:'Tier Board (optional title)';color:var(--muted)}
+.board-title[contenteditable="true"]{
+  border-bottom:2px dashed rgba(139,125,255,.45);
+  border-radius:0;
+}
+.board-title[contenteditable="true"]:focus{
+  outline:0; box-shadow:none;
+  border-bottom:2px solid rgba(139,125,255,.85);
+}
 
 #tierBoard{display:grid;gap:12px}
-.tier-row{display:grid;grid-template-columns:160px 1fr;gap:12px;align-items:stretch}
-@media (max-width:768px){.tier-row{grid-template-columns:120px 1fr}}
+.tier-row{display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch}
+@media (max-width:768px){.tier-row{grid-template-columns:140px 1fr}}
 
 /* --- TIER LABEL COLUMN --- */
 .tier-label{
   position:relative;
   border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow);
-  padding:10px; display:grid; place-items:center; min-height:110px; overflow:hidden;
+  padding:12px; display:grid; place-items:center; 
+  /* Tall enough to comfortably fit one row of 110px circles; rows grow only when needed */
+  min-height:calc(110px + 28px);
+  overflow:hidden;
 }
 .label-chip{
   position:relative;width:100%;max-width:100%;
@@ -104,17 +127,16 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
   color:#111; /* JS will adjust for contrast */
   display:flex;align-items:center;justify-content:center;
   font-weight:900;
-  font-size:28px;           /* bigger default */
+  font-size:32px;           /* larger default; JS will step down if needed */
   line-height:1.15;
   text-transform:uppercase;letter-spacing:.5px;user-select:none;
-  white-space:normal;       /* allow paragraph-style wrapping */
+  white-space:normal;       /* paragraph-style wrapping */
   text-align:center; padding:6px 8px;
   overflow:hidden;
-  word-break:normal;
-  overflow-wrap:anywhere;   /* wrap even long unbroken words */
+  word-break:break-word; hyphens:auto; overflow-wrap:break-word;
 }
 
-/* Row delete X (auto-darker) */
+/* Row delete X */
 .row-del{
   position:absolute;right:8px;bottom:8px;width:36px;height:36px;border-radius:9px;
   color:#fff;display:grid;place-items:center;
@@ -123,11 +145,16 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 }
 .row-del svg{width:16px;height:16px;fill:currentColor}
 
+/* Hide delete buttons during export so image matches intended look */
+.exporting .row-del{display:none !important;}
+
 /* Drops */
 .tier-drop{
   background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
   padding:14px;display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
-  align-content:start;gap:14px;min-height:110px;
+  align-content:start;gap:14px;
+  /* Matches one row of 110px circles + vertical padding; only grows on second row */
+  min-height:calc(110px + 28px);
 }
 .tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
 .dropzone.drag-over{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
@@ -164,9 +191,11 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 
 /* ---------- A11y ---------- */
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+/* Match the live region class used in JS */
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 
 /* ---------- Radial picker (mobile) ---------- */
-.radial{position:fixed;inset:0;z-index:60;pointer-events:auto;filter:drop-shadow(0 8px 24px rgba(0,0,0,.35))}
+.radial{position:fixed;inset:0;z-index:60;pointer-events:auto;filter:drop-shadow(0 8px 24px rgba(0,0,0,.35)); touch-action:none;}
 .radial.hidden{display:none}
 .radial-options{position:relative;width:100%;height:100%}
 .radial-option{position:absolute;width:56px;height:56px;border-radius:999px;transform:translate(-50%,-50%)}
