@@ -1,12 +1,9 @@
 /* =========================================================
    Tier Maker — JS (updated)
-   - Label fitter 34→14px; respects label min-height (stable center)
-   - Stable rows (CSS min-heights); refit after moves/reorders
-   - PNG export captures the live DOM, no shifting
-   - Title pencil swapped; clearer editable affordance (CSS)
-   - Radial picker scroll-lock fixed (overflow approach)
-   - Expanded preset palette (as-is), shuffled each load
-   - Added .sr-only CSS match; kept A11y live region
+   - Center-locked labels (flex); refit after moves/reorders
+   - PNG export: exact capture, title hidden if empty, edit UI hidden
+   - Mobile picker: reverted to fixed-body scroll lock (no more jump)
+   - Curated preset palette (good with black text), shuffled per load
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -66,7 +63,7 @@ function ensureLive(){
   var n = $('#live');
   if (!n) {
     n = document.createElement('div');
-    n.id='live'; n.setAttribute('aria-live','polite'); n.className='sr-only'; // matches CSS
+    n.id='live'; n.setAttribute('aria-live','polite'); n.className='sr-only';
     document.body.appendChild(n);
   }
   return n;
@@ -81,15 +78,6 @@ function hexToRgb(hex){ var h=hex.replace('#',''); if(h.length===3){ h=h.split('
 function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(16).padStart(2,'0');}).join(''); }
 function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
 function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
-function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f)); }
-function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round(c.r+(255-c.r)*f), Math.round(c.g+(255-c.g)*f), Math.round(c.b+(255-c.b)*f)); }
-function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
-  return rgbToHex(
-    Math.round(a.r+(b.r-a.r)*t),
-    Math.round(a.g+(b.g-a.g)*t),
-    Math.round(a.b+(b.b-a.b)*t)
-  );
-}
 
 /* ---------- Theme toggle ---------- */
 (function(){
@@ -114,7 +102,7 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
     });
   }
 
-  /* Replace the board title pencil with "pencil-square" & align */
+  /* Title pencil */
   var titlePen = $('.title-pen');
   if (titlePen){
     titlePen.innerHTML =
@@ -125,30 +113,54 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 /* ---------- Globals ---------- */
 var board=null, tray=null;
 
-/* ---------- FLIP helper ---------- */
-function flipZones(zones, mutate){
-  var prev=new Map();
-  zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
-  mutate();
-  requestAnimationFrame(function(){
-    zones.forEach(function(z){
-      $$('.token',z).forEach(function(t){
-        var r2=t.getBoundingClientRect(), r1=prev.get(t); if(!r1) return;
-        var dx=r1.left-r2.left, dy=r1.top-r2.top;
-        if(dx||dy){
-          t.classList.add('flip-anim');
-          t.style.transform='translate('+dx+'px,'+dy+'px)';
-          requestAnimationFrame(function(){
-            t.style.transform='translate(0,0)';
-            setTimeout(function(){ t.classList.remove('flip-anim'); t.style.transform=''; },220);
-          });
-        }
-      });
-    });
-  });
+/* ---------- Helpers ---------- */
+function tintFrom(color){
+  var surface = cssVar('--surface') || '#111219';
+  var a=hexToRgb(surface), b=hexToRgb(color);
+  var dark = document.documentElement.getAttribute('data-theme')!=='light';
+  var amt = dark?0.14:0.09;
+  return rgbToHex(
+    Math.round(a.r+(b.r-a.r)*amt),
+    Math.round(a.g+(b.g-a.g)*amt),
+    Math.round(a.b+(b.b-a.b)*amt)
+  );
+}
+function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
+
+/* ---------- Chip text fitter (34 → 14 px) ---------- */
+var CHIP_STEPS=[34,32,30,28,24,22,20,18,16,14];
+function fitChipText(chip){
+  if(!chip) return;
+  // centered paragraph
+  chip.style.whiteSpace='normal';
+  chip.style.lineHeight='1.15';
+  chip.style.display='flex';
+  chip.style.alignItems='center';
+  chip.style.justifyContent='center';
+  chip.style.textAlign='center';
+  chip.style.overflow='hidden';
+
+  var wrap = chip.parentElement;
+  var cs = getComputedStyle(wrap);
+  var padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  var padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  var maxW = Math.max(40, wrap.clientWidth - padX);
+  // Use current height so label can legitimately drive row growth
+  var maxH = Math.max(110, wrap.clientHeight - padY);
+
+  chip.style.maxWidth = '100%';
+  chip.style.maxHeight = maxH + 'px';
+
+  for (var i=0; i<CHIP_STEPS.length; i++){
+    var px = CHIP_STEPS[i];
+    chip.style.fontSize = px + 'px';
+    if (chip.scrollWidth <= maxW && chip.scrollHeight <= maxH){
+      break;
+    }
+  }
 }
 
-/* ---------- Row DOM ---------- */
+/* ---------- Build a row ---------- */
 function buildRowDom(){
   var row=document.createElement('div'); row.className='tier-row'; row.id=uid();
 
@@ -181,55 +193,7 @@ function buildRowDom(){
   row.appendChild(labelWrap); row.appendChild(drop);
   return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
 }
-function tintFrom(color){
-  var surface = cssVar('--surface') || '#111219';
-  var a=hexToRgb(surface), b=hexToRgb(color);
-  var dark = document.documentElement.getAttribute('data-theme')!=='light';
-  var amt = dark?0.14:0.09;
-  return rgbToHex(
-    Math.round(a.r+(b.r-a.r)*amt),
-    Math.round(a.g+(b.g-a.g)*amt),
-    Math.round(a.b+(b.b-a.b)*amt)
-  );
-}
-function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
-/* ---------- Chip text fitter (up to 34px, down to 14px; uses min-height) ---------- */
-var CHIP_STEPS=[34,32,30,28,24,22,20,18,16,14];
-function fitChipText(chip){
-  if(!chip) return;
-
-  // paragraph-like centering
-  chip.style.whiteSpace='normal';
-  chip.style.lineHeight='1.15';
-  chip.style.display='flex';
-  chip.style.alignItems='center';
-  chip.style.justifyContent='center';
-  chip.style.textAlign='center';
-  chip.style.overflow='hidden';
-
-  var wrap = chip.parentElement; // .tier-label
-  var cs = getComputedStyle(wrap);
-  var padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-  var padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-  var maxW = Math.max(40, wrap.clientWidth - padX);
-  // Use declared min-height so token growth doesn't inflate fit box
-  var minH = parseFloat(cs.minHeight) || wrap.clientHeight;
-  var maxH = Math.max(110, minH - padY);
-
-  chip.style.maxWidth = '100%';
-  chip.style.maxHeight = maxH + 'px';
-
-  for (var i=0; i<CHIP_STEPS.length; i++){
-    var px = CHIP_STEPS[i];
-    chip.style.fontSize = px + 'px';
-    if (chip.scrollWidth <= maxW && chip.scrollHeight <= maxH){
-      break;
-    }
-  }
-}
-
-/* ---------- Create / wire a row ---------- */
 function createRow(cfg){
   var dom = buildRowDom();
   var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap=dom.labelWrap;
@@ -243,7 +207,11 @@ function createRow(cfg){
   chip.style.background = 'transparent';
   chip.style.color = contrastColor(cfg.color);
 
-  del.style.background = darken(cfg.color, 0.35);
+  // darker delete button
+  del.style.background = (function(hex){
+    var c=hexToRgb(hex); var f=0.65; // darker, but readable
+    return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f));
+  })(cfg.color);
 
   var tint = tintFrom(cfg.color);
   drop.style.background = tint; drop.dataset.manual = 'false';
@@ -281,14 +249,14 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names (Temz/Versse) ---------- */
+/* ---------- Preset names ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette (as-is), shuffled each load ---------- */
+/* ---------- Curated palette (good with black text) ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -302,28 +270,37 @@ var EXTRA_PALETTE = [
   '#ac1917','#b75420','#c0982b',
   '#d70e17','#e46828','#f0be39',
   '#e54a50','#ea8553','#eec76b',
-
   '#768b45','#237f5d','#1c7873',
   '#93ae55','#359d73','#27958f',
   '#a9be77','#6fb293','#4eaaa6',
-
   '#156b8a','#3f5d82','#704776',
   '#1887ab','#4f73a1','#8c5792',
   '#5d9db9','#728fb4','#926ca0',
-
   '#874f80','#a15284','#aa3653',
   '#a9629f','#c867a5','#d34467',
   '#b881b1','#d386b7','#dc6986'
 ];
-var presetPalette = BASE_PALETTE.concat(EXTRA_PALETTE);
+// Contrast ratio vs black
+function contrastVsBlack(hex){
+  var L = relativeLuminance(hexToRgb(hex));
+  return (L + 0.05) / 0.05; // >= 4.5 recommended for small text
+}
+var ALL = BASE_PALETTE.concat(EXTRA_PALETTE);
+// Filter out colors that are too dark against black labels (ratio < 5)
+var curated = ALL.filter(function(c){ return contrastVsBlack(c) >= 5; });
+// Add a few handpicked clean tones to ensure plenty of uniques
+curated = curated.concat([
+  '#ffb703','#8ecae6','#219ebc','#90be6d','#f28482','#ffcad4',
+  '#ffd166','#06d6a0','#bde0fe','#cdb4db','#a0c4ff','#d4a373',
+  '#00c2a8','#ffc6ff','#ffd6e0','#bff0d4'
+]);
+// Deduplicate
+curated = Array.from(new Set(curated));
 function shuffle(arr){
-  for (var i=arr.length-1;i>0;i--){
-    var j=Math.floor(Math.random()*(i+1));
-    var t=arr[i]; arr[i]=arr[j]; arr[j]=t;
-  }
+  for (var i=arr.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=arr[i]; arr[i]=arr[j]; arr[j]=t; }
   return arr;
 }
-presetPalette = shuffle(presetPalette.slice());
+var presetPalette = shuffle(curated.slice());
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
 /* ---------- Token label fitter ---------- */
@@ -345,6 +322,29 @@ function fitLiveLabel(lbl){
 function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
 function refitAllChips(){ $$('.label-chip').forEach(fitChipText); }
 on(window,'resize', debounce(function(){ refitAllLabels(); refitAllChips(); }, 120));
+
+/* ---------- FLIP helper ---------- */
+function flipZones(zones, mutate){
+  var prev=new Map();
+  zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
+  mutate();
+  requestAnimationFrame(function(){
+    zones.forEach(function(z){
+      $$('.token',z).forEach(function(t){
+        var r2=t.getBoundingClientRect(), r1=prev.get(t); if(!r1) return;
+        var dx=r1.left-r2.left, dy=r1.top-r2.top;
+        if(dx||dy){
+          t.classList.add('flip-anim');
+          t.style.transform='translate('+dx+'px,'+dy+'px)';
+          requestAnimationFrame(function(){
+            t.style.transform='translate(0,0)';
+            setTimeout(function(){ t.classList.remove('flip-anim'); t.style.transform=''; },220);
+          });
+        }
+      });
+    });
+  });
+}
 
 /* ---------- Tokens ---------- */
 function buildTokenBase(){
@@ -430,7 +430,7 @@ function moveToken(node, toZone, beforeTok){
   flipZones([originParent, toZone], function(){ if(beforeTok) toZone.insertBefore(node,beforeTok); else toZone.appendChild(node); });
   historyStack.push({ type:'move', itemId:snap.itemId, fromId:snap.fromId, fromBeforeId:snap.fromBeforeId, toId:toId, toBeforeId:beforeId });
   updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
-  refitAllChips(); // keep labels centered as rows change height
+  refitAllChips();
 }
 function performMoveTo(itemId, parentId, beforeId){
   var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
@@ -502,14 +502,6 @@ function enableClickToPlace(zone){
   });
 }
 
-/* ---------- Zone detection ---------- */
-function getDropZoneFromElement(el){
-  if (!el) return null;
-  var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
-  var chip=el.closest('.tier-label'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
-  return null;
-}
-
 /* ---------- Drag (desktop/mobile) ---------- */
 function enablePointerDrag(node){
   var ghost=null, originNext=null, currentZone=null;
@@ -569,6 +561,20 @@ function enablePointerDrag(node){
   });
 }
 function enableMouseTouchDragFallback(node){ on(node,'mousedown', function(e){ e.preventDefault(); }); }
+
+/* ---------- Picker scroll lock (reverted to fixed-body lock) ---------- */
+var _scrollLockY = 0;
+function lockScroll(){
+  _scrollLockY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.classList.add('radial-lock');
+  document.body.style.top = (-_scrollLockY)+'px';
+}
+function unlockScroll(){
+  document.body.classList.remove('radial-lock');
+  document.body.style.top = '';
+  window.scrollTo(0, _scrollLockY);
+}
+
 function enableMobileTouchDrag(node){
   if(!('PointerEvent' in window)) return;
   on(node,'pointerdown',function(e){
@@ -664,26 +670,15 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* lock scrolling without iOS jump-to-top */
-function lockScroll(){
-  document.documentElement.style.overflow = 'hidden';
-  document.body.style.overflow = 'hidden';
-}
-function unlockScroll(){
-  document.documentElement.style.overflow = '';
-  document.body.style.overflow = '';
-}
-
 function openRadial(token){
   if(!radial||!isSmall()) return;
   radialForToken = token;
-  lockScroll();
+  lockScroll(); // revert to fixed-body; avoids jump-to-top bug
 
   var rect = token.getBoundingClientRect();
   var cx = rect.left + rect.width/2;
   var cy = rect.top + rect.height/2;
 
-  // nudge right if near left edge so S isn't clipped
   var nudgeX = (rect.left < 24) ? 18 : 0;
 
   var rows = $$('.tier-row');
@@ -762,7 +757,7 @@ on($('#trashClear'),'click', function(){
   queueAutosave(); refitAllChips();
 });
 
-/* ---------- EXPORT (capture live DOM exactly) ---------- */
+/* ---------- EXPORT (exact live DOM; hide edit UI; skip title if empty) ---------- */
 (function(){
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
@@ -781,12 +776,19 @@ on($('#trashClear'),'click', function(){
     var panel = $('#boardPanel');
     if (!panel){ alert('Board not found.'); return; }
 
+    // Hide title row if the title is empty
+    var titleWrap = panel.querySelector('.board-title-wrap');
+    var title = titleWrap ? titleWrap.querySelector('.board-title') : null;
+    var titleEmpty = title ? (title.textContent.replace(/\s+/g,'')==='') : true;
+    var prevDisplay = titleWrap ? titleWrap.style.display : '';
+    if (titleWrap && titleEmpty){ titleWrap.style.display='none'; document.body.classList.add('no-title'); }
+
     // Wait for fonts to fully load so text doesn’t shift
     if (document.fonts && document.fonts.ready){
       try{ await document.fonts.ready; }catch(_){}
     }
 
-    document.body.classList.add('exporting'); // hides little X buttons
+    document.body.classList.add('exporting'); // hides edit UI & X buttons
     overlay.style.display='flex';
 
     try{
@@ -805,6 +807,8 @@ on($('#trashClear'),'click', function(){
       console.error('Export failed', err);
       alert('Sorry, something went wrong while exporting.');
     } finally {
+      if (titleWrap) titleWrap.style.display = prevDisplay;
+      document.body.classList.remove('no-title');
       document.body.classList.remove('exporting');
       overlay.style.display='none';
     }
@@ -822,7 +826,7 @@ on($('#trashClear'),'click', function(){
     preview.style.cssText='display:inline-block;width:22px;height:22px;border-radius:50%;border:3px solid #111;margin-left:8px;vertical-align:middle;';
     if(addBtn && addBtn.parentElement) addBtn.parentElement.insertBefore(preview, addBtn);
   }
-  function updatePreview(){ var v=colorInput && colorInput.value ? colorInput.value : '#dddddd'; preview.style.background=v; }
+  function updatePreview(){ var v=(colorInput && colorInput.value) ? colorInput.value : '#dddddd'; preview.style.background=v; }
   if(colorInput){
     on(colorInput,'input', updatePreview);
     on(document,'DOMContentLoaded', updatePreview);
