@@ -1,12 +1,3 @@
-/* =========================================================
-   Tier Maker — JS
-   Fixes:
-   - mobile picker row selection (no more “always D”)
-   - png capture: no text shift, desktop width on mobile
-   - label padding/centering
-   - smoother drag (fallback + will-change)
-========================================================= */
-
 /* ---------- Polyfills ---------- */
 (function () {
   if (!String.prototype.padStart) {
