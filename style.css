@@ -1,12 +1,3 @@
-/* =========================================================
-   Tier Maker — CSS
-   - label clipping fix
-   - export “no-shift” mode
-   - title spacing +6px
-   - smoother dragging hints
-   - desktop-capture rules for mobile PNG
-========================================================= */
-
 /* ---------- Reset ---------- */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
