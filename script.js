@@ -267,15 +267,22 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette ---------- */
+/* Material 3 inspired, bold but readable (black text friendly) */
 var BASE_PALETTE = [
-  '#FCE38A','#F3A683','#F5CD7A','#F7D794',
-  '#778BEB','#EB8688','#CF6A87','#786FA6',
-  '#F8A5C2','#64CDDB','#3EC1D3','#E77F67',
-  '#FA991C','#FAD4C9','#7FC4D4','#A7B3E9',
-  '#FBD78B','#EFA7A7','#9FD8DF','#C8B6FF',
-  '#B8E1FF','#FFD6A5','#C3F0CA','#FFE5EC',
-  '#F4B942','#9EE493','#8AC6D1','#FF8FAB','#B0A8F0'
+  // yellows / ambers
+  '#FFE176','#FFD24A','#FFC94B','#FFF59D',
+  // oranges / corals
+  '#FFCC80','#FFB38A','#FF9E80','#FFAB91',
+  // reds / pinks
+  '#FFCDD2','#F8A8B9','#F48FB1','#FF8FA3',
+  // violets / purples
+  '#E1BEE7','#D1B5FF','#C7B7FF','#CE93D8',
+  // blues / teals
+  '#B3E5FC','#90CAF9','#A5E3F0','#9BE7FF',
+  // greens / mints
+  '#B2F2BB','#A5D6A7','#9AE6B4','#C6F6D5',
+  // limes
+  '#E6EE9C','#DCE775'
 ];
 function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
 function ensureForBlack(hex){
@@ -804,7 +811,7 @@ on($('#trashClear'),'click', function(){
 
         // hide placeholder title if empty (capture only when provided)
         var title = clone.querySelector('.board-title');
-        if (title && title.textContent.replace(/\s+/g,'') === '') {
+       if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
           var wrapTitle = title.closest('.board-title-wrap');
           if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
           clone.classList.add('no-title');
