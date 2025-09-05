@@ -147,7 +147,7 @@ function buildRowDom(){
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
   var a=hexToRgb(surface), b=hexToRgb(color);
-  var amt = 0.14; // dark only
+  var amt = 0.14;
   return rgbToHex(
     Math.round(a.r+(b.r-a.r)*amt),
     Math.round(a.g+(b.g-a.g)*amt),
@@ -601,7 +601,7 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* NOTE: removed scroll-lock to stop "jump to top" bug on selection */
+/* No scroll-lock to avoid the jump-to-top bug */
 function openRadial(token){
   if(!radial||!isSmall()) return;
   radialForToken = token;
@@ -689,8 +689,17 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT ---------- */
+/* ---------- EXPORT (hardened) ---------- */
 (function(){
+  function isCrossOriginUrl(url){
+    try{
+      if (!url) return false;
+      if (url.startsWith('data:')) return false;
+      const u = new URL(url, location.href);
+      return u.origin !== location.origin;
+    }catch(_){ return false; }
+  }
+
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -705,41 +714,94 @@ on($('#trashClear'),'click', function(){
     if (typeof html2canvas !== 'function'){
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
+
+    // Clear interactive states
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     var panel = $('#boardPanel');
+    if(!panel){
+      alert('Could not find the board to export.'); return;
+    }
+
+    // Build clone
     var cloneWrap = document.createElement('div');
-    cloneWrap.style.position='fixed'; cloneWrap.style.left='-99999px'; cloneWrap.style.top='0';
+    cloneWrap.style.position='fixed';
+    cloneWrap.style.left='-99999px';
+    cloneWrap.style.top='0';
+    cloneWrap.style.visibility='hidden';
 
     var clone = panel.cloneNode(true);
-    clone.style.width = panel.getBoundingClientRect().width + 'px';
-    var s = document.createElement('style'); s.textContent='.row-del{display:none !important;}'; clone.appendChild(s);
+    clone.classList.add('exporting','desktop-capture');
 
+    // Remove non-export elements
+    var killSel = ['.row-del','.title-pen','.radial','[data-nonexport]'].join(',');
+    clone.querySelectorAll(killSel).forEach(function(n){ n.remove(); });
+
+    // Hide title wrapper if no title
     var title = clone.querySelector('.board-title');
     if (title && title.textContent.replace(/\s+/g,'') === '') {
-      var wrap = title.parentElement; if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      var wrap = title.closest('.board-title-wrap');
+      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
       clone.classList.add('no-title');
     }
 
-    cloneWrap.appendChild(clone); document.body.appendChild(cloneWrap);
+    // Sanitize images (avoid taint)
+    var shouldIgnore = function(el){
+      if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src') || '')) return true;
+      return false;
+    };
+    clone.querySelectorAll('img').forEach(function(img){
+      var src = img.getAttribute('src')||'';
+      if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
+        img.setAttribute('crossorigin','anonymous');
+      }
+    });
+
+    // Inline reset to kill animations/filters in the clone only
+    var reset = document.createElement('style');
+    reset.textContent = `
+      .exporting *{ animation:none !important; transition:none !important; }
+      .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
+      .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
+      .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
+    `;
+    clone.appendChild(reset);
+
+    // Fix width
+    var w = panel.getBoundingClientRect().width;
+    clone.style.width = w + 'px';
+
+    cloneWrap.appendChild(clone);
+    document.body.appendChild(cloneWrap);
     overlay.style.display='flex';
 
     html2canvas(clone, {
-      backgroundColor: cssVar('--surface') || null,
+      backgroundColor: cssVar('--surface') || '#0f1115',
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
       useCORS: true,
-      scale: 2,
+      allowTaint: false,
+      imageTimeout: 0,
+      foreignObjectRendering: false,
+      removeContainer: true,
+      scrollX: 0,
+      scrollY: 0,
+      logging: false,
       width: clone.getBoundingClientRect().width,
-      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0)
+      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
+      ignoreElements: shouldIgnore
     }).then(function(canvas){
-      var a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='tier-list.png';
+      var a=document.createElement('a');
+      a.href=canvas.toDataURL('image/png');
+      a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
-      cloneWrap.remove();
     }).catch(function(err){
       console.error('Export failed', err);
       alert('Sorry, something went wrong while exporting.');
-      cloneWrap.remove();
-    }).finally(function(){ overlay.style.display='none'; });
+    }).finally(function(){
+      if (cloneWrap && cloneWrap.parentNode) cloneWrap.parentNode.removeChild(cloneWrap);
+      overlay.style.display='none';
+    });
   });
 })();
 
@@ -807,7 +869,7 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
-/* ---------- Desktop inline-controls: title + buttons on one line ---------- */
+/* ---------- Desktop inline-controls: merge into Image Storage ---------- */
 function setupDesktopControlsMerge(){
   var controls = $('.controls'); if(!controls) return;
   var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
@@ -848,7 +910,7 @@ function setupDesktopControlsMerge(){
   apply();
   on(window,'resize', debounce(apply, 120));
 
-  /* swap icons (use external SVGs via <img> so sizing stays consistent) */
+  /* swap icons via URLs */
   var undoIco = $('#undoBtn .ico'); if (undoIco) undoIco.innerHTML = '<img alt="" src="https://www.svgrepo.com/show/523076/undo-left-round-square.svg">';
   var trashIco = $('#trashClear .ico'); if (trashIco) trashIco.innerHTML = '<img alt="" src="https://www.svgrepo.com/show/490254/trash-can.svg">';
 }
