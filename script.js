@@ -1,5 +1,5 @@
 /* =========================================================
-   Tier Maker — JS (with desktop inline-controls + minor polish)
+   Tier Maker — JS (dark-only, inline controls, fixes)
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -52,7 +52,6 @@ var $$ = function (s, ctx){ return Array.prototype.slice.call((ctx||document).qu
 function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
-/* Desktop-wide helper for merging controls */
 function isDesktopWide(){ return window.matchMedia && window.matchMedia('(min-width: 1024px)').matches; }
 function debounce(fn, ms){ var t; return function(){ clearTimeout(t); t=setTimeout(fn, ms); }; }
 
@@ -85,37 +84,6 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
     Math.round(a.b+(b.b-a.b)*t)
   );
 }
-
-/* ---------- Theme toggle ---------- */
-(function(){
-  var root=document.documentElement;
-  var toggle=$('#themeToggle'); if(!toggle) return;
-  var icon=$('.theme-icon',toggle), text=$('.theme-text',toggle);
-  var prefersLight=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches);
-  setTheme(localStorage.getItem('tm_theme') || (prefersLight ? 'light' : 'dark'));
-  on(toggle,'click', function(){ setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark'); });
-  function setTheme(mode){
-    root.setAttribute('data-theme', mode); localStorage.setItem('tm_theme', mode);
-    var target = mode==='dark' ? 'Light' : 'Dark';
-    if(text) text.textContent = target;
-    if(icon) icon.innerHTML = (target==='Light'
-      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79L3.17 4.84l1.79 1.79 1.8-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zM4.22 19.78l1.79-1.79 1.8 1.79-1.8 1.8-1.79-1.8zM20 13h3v-2h-3v2zM12 1h2v3h-2V1zm6.01 3.05l1.79 1.79 1.8-1.79-1.8-1.8-1.79 1.8zM12 6a6 6 0 100 12A6 6 0 0012 6z"/></svg>'
-      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"/></svg>');
-    // re-tint row backgrounds
-    $$('.tier-row').forEach(function(row){
-      var chip=$('.label-chip',row), drop=$('.tier-drop',row), wrap=$('.tier-label',row);
-      var color=(chip && chip.dataset.color) || (wrap && wrap.dataset.color) || '#8b7dff';
-      if (drop && drop.dataset.manual!=='true'){ drop.style.background = tintFrom(color); }
-    });
-  }
-
-  /* Replace the board title pencil with "pencil-square" & align */
-  var titlePen = $('.title-pen');
-  if (titlePen){
-    titlePen.innerHTML =
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.232 5.232l3.536 3.536-9.9 9.9H5.333v-3.536l9.9-9.9zm1.414-1.414l1.414-1.414a2 2 0 012.828 0l1.414 1.414a2 2 0 010 2.828l-1.414 1.414-3.536-3.536L16.646 3.818zM3 7a2 2 0 012-2h6a1 1 0 110 2H5v12h12v-6a1 1 0 112 0v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>';
-  }
-})();
 
 /* ---------- Globals ---------- */
 var board=null, tray=null;
@@ -179,8 +147,7 @@ function buildRowDom(){
 function tintFrom(color){
   var surface = cssVar('--surface') || '#111219';
   var a=hexToRgb(surface), b=hexToRgb(color);
-  var dark = document.documentElement.getAttribute('data-theme')!=='light';
-  var amt = dark?0.14:0.09;
+  var amt = 0.14; // dark only
   return rgbToHex(
     Math.round(a.r+(b.r-a.r)*amt),
     Math.round(a.g+(b.g-a.g)*amt),
@@ -190,7 +157,7 @@ function tintFrom(color){
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
 /* ---------- Chip text fitter ---------- */
-var CHIP_STEPS=[28,24,22,20,18,16,14];
+var CHIP_STEPS=[32,28,24,22,20,18,16,14];
 function fitChipText(chip){
   if(!chip) return;
   chip.style.whiteSpace='normal';
@@ -243,7 +210,6 @@ function createRow(cfg){
     if(!ok) return;
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
-    // collapse animation before removal
     node.classList.add('removing');
     setTimeout(function(){ node.remove(); refreshRadialOptions(); queueAutosave();
       historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); updateUndo();
@@ -275,7 +241,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette logic (unchanged except safety) ---------- */
+/* ---------- Palette ---------- */
 var BASE_PALETTE = [
   '#FCE38A','#F3A683','#F5CD7A','#F7D794',
   '#778BEB','#EB8688','#CF6A87','#786FA6',
@@ -628,7 +594,6 @@ var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
 var _radialGeo = [];
-var _scrollLockY = 0;
 
 function rowCount(){ return $$('.tier-row').length; }
 function uniformCenter(cx, cy, R){
@@ -636,21 +601,10 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-function lockScroll(){
-  _scrollLockY = window.scrollY || document.documentElement.scrollTop || 0;
-  document.body.classList.add('radial-lock');
-  document.body.style.top = (-_scrollLockY)+'px';
-}
-function unlockScroll(){
-  document.body.classList.remove('radial-lock');
-  document.body.style.top = '';
-  window.scrollTo(0, _scrollLockY);
-}
-
+/* NOTE: removed scroll-lock to stop "jump to top" bug on selection */
 function openRadial(token){
   if(!radial||!isSmall()) return;
   radialForToken = token;
-  lockScroll(); // prevent creeping
 
   var rect = token.getBoundingClientRect();
   var cx = rect.left + rect.width/2;
@@ -725,7 +679,6 @@ function closeRadial(){
   radial.classList.remove('visible','show');
   radial.setAttribute('aria-hidden','true');
   radialForToken = null; _radialGeo = [];
-  unlockScroll();
 }
 on(window,'resize', refreshRadialOptions);
 
@@ -736,7 +689,7 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT (unchanged) ---------- */
+/* ---------- EXPORT ---------- */
 (function(){
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
@@ -746,7 +699,6 @@ on($('#trashClear'),'click', function(){
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
   on($('#saveBtn'),'click', function(){
-    // playful bounce
     this.classList.add('bounce-anim');
     once(this,'animationend',()=>this.classList.remove('bounce-anim'));
 
@@ -855,42 +807,50 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
-/* ---------- Desktop inline-controls: move controls into Image Storage ---------- */
+/* ---------- Desktop inline-controls: title + buttons on one line ---------- */
 function setupDesktopControlsMerge(){
   var controls = $('.controls'); if(!controls) return;
   var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
   var trayPanel = $('#tray') ? $('#tray').closest('.panel') : null; if(!trayPanel) return;
 
-  // Placeholder to restore on mobile
+  // markers to restore when returning to mobile
   var homeMarker = document.createElement('div'); homeMarker.id='controlsHome';
-  if (controlsPanel && controls.parentNode !== homeMarker.parentNode){
-    controlsPanel.insertBefore(homeMarker, controls); // marker sits before controls
-  }
+  if (controlsPanel && !$('#controlsHome')) controlsPanel.insertBefore(homeMarker, controls);
 
-  // Inline wrapper inside Image Storage panel (inserted before #tray)
+  var title = trayPanel.querySelector('.section-title');
+  var titleHome = document.createElement('div'); titleHome.id='titleHome';
+  if (title && !$('#titleHome')) title.parentNode.insertBefore(titleHome, title.nextSibling);
+
+  var sectionBar = document.createElement('div'); sectionBar.className='section-bar';
   var inlineWrap = document.createElement('div'); inlineWrap.className='controls-inline';
 
   function apply(){
     if (isDesktopWide()){
-      // merge into Image Storage
-      if (!inlineWrap.parentNode){ trayPanel.insertBefore(inlineWrap, $('#tray')); }
+      if (!sectionBar.parentNode){ trayPanel.insertBefore(sectionBar, $('#tray')); }
+      if (title && title.parentNode !== sectionBar){ sectionBar.appendChild(title); }
+      if (!inlineWrap.parentNode){ sectionBar.appendChild(inlineWrap); }
       if (controls.parentNode !== inlineWrap){ inlineWrap.appendChild(controls); }
       document.body.classList.add('controls-merged');
-      // compact buttons to fit one row
-      $$('.btn', controls).forEach(function(b){ b.classList.add('compact'); });
     } else {
-      // restore original panel & layout
+      // restore title and controls
+      if (titleHome && titleHome.parentNode && title && title.parentNode !== titleHome.parentNode){
+        titleHome.parentNode.insertBefore(title, titleHome);
+      }
       if (homeMarker && homeMarker.parentNode && controls.parentNode !== homeMarker.parentNode){
         homeMarker.parentNode.insertBefore(controls, homeMarker.nextSibling);
       }
       document.body.classList.remove('controls-merged');
-      $$('.btn', controls).forEach(function(b){ b.classList.remove('compact'); });
       if (inlineWrap.parentNode) inlineWrap.parentNode.removeChild(inlineWrap);
+      if (sectionBar.parentNode) sectionBar.parentNode.removeChild(sectionBar);
     }
   }
 
   apply();
   on(window,'resize', debounce(apply, 120));
+
+  /* swap icons (use external SVGs via <img> so sizing stays consistent) */
+  var undoIco = $('#undoBtn .ico'); if (undoIco) undoIco.innerHTML = '<img alt="" src="https://www.svgrepo.com/show/523076/undo-left-round-square.svg">';
+  var trashIco = $('#trashClear .ico'); if (trashIco) trashIco.innerHTML = '<img alt="" src="https://www.svgrepo.com/show/490254/trash-can.svg">';
 }
 
 /* ---------- Init ---------- */
@@ -909,13 +869,11 @@ document.addEventListener('DOMContentLoaded', function start(){
   }
 
   on($('#addTierBtn'),'click', function(){
-    // playful bounce
     this.classList.add('bounce-anim');
     once(this,'animationend',()=>this.classList.remove('bounce-anim'));
 
     var row = createRow({label:'NEW', color: nextTierColor()});
     board.appendChild(row);
-    // focus label for immediate rename
     var chip = $('.label-chip', row); if (chip) chip.focus();
     refreshRadialOptions(); queueAutosave();
   });
@@ -958,6 +916,5 @@ document.addEventListener('DOMContentLoaded', function start(){
   refitAllLabels();
   refitAllChips();
 
-  /* New: merge controls into Image Storage on desktop only */
   setupDesktopControlsMerge();
 });
