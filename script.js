@@ -1,5 +1,5 @@
 /* =========================================================
-   Tier Maker — JS (dark-only, inline controls, fixes)
+   Tier Maker — JS (dark-only, springy picker, hardened export)
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -601,10 +601,25 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* No scroll-lock to avoid the jump-to-top bug */
+/* Spring helper (overshoot) using WAAPI keyframes) */
+function springIn(el, delay){
+  try{
+    el.animate(
+      [
+        { transform: 'translate(-50%,-50%) scale(0.72)', opacity: 0 },
+        { transform: 'translate(-50%,-50%) scale(1.08)', opacity: 1, offset: .58 },
+        { transform: 'translate(-50%,-50%) scale(0.96)', opacity: 1, offset: .82 },
+        { transform: 'translate(-50%,-50%) scale(1.00)', opacity: 1 }
+      ],
+      { duration: 420, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
+    );
+  }catch(_){}
+}
+
 function openRadial(token){
   if(!radial||!isSmall()) return;
   radialForToken = token;
+  if (radialCloseBtn) radialCloseBtn.setAttribute('type','button'); // safety
 
   var rect = token.getBoundingClientRect();
   var cx = rect.left + rect.width/2;
@@ -648,10 +663,17 @@ function openRadial(token){
       on(btn,'pointerleave', function(){ btn.classList.remove('is-hot'); });
       on(btn,'pointerdown', function(e){ e.preventDefault(); });
       on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
+
       radialOpts.appendChild(btn);
       _radialGeo.push({row:row, btn:btn});
+
+      // spring-in
+      springIn(btn, j*24);
     })(j);
   }
+
+  // spring-in center close
+  springIn(radialCloseBtn, 40);
 
   function backdrop(ev){
     if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
@@ -682,14 +704,14 @@ function closeRadial(){
 }
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- Clear / Undo buttons ---------- */
+/* ---------- Clear ---------- */
 on($('#trashClear'),'click', function(){
   if (!confirm('Clear the entire tier board? Items move back to Image Storage.')) return;
   $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
   queueAutosave();
 });
 
-/* ---------- EXPORT (hardened) ---------- */
+/* ---------- EXPORT (more robust) ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -724,72 +746,69 @@ on($('#trashClear'),'click', function(){
       alert('Could not find the board to export.'); return;
     }
 
-    // Build clone
-    var cloneWrap = document.createElement('div');
-    cloneWrap.style.position='fixed';
-    cloneWrap.style.left='-99999px';
-    cloneWrap.style.top='0';
-    cloneWrap.style.visibility='hidden';
-
-    var clone = panel.cloneNode(true);
-    clone.classList.add('exporting','desktop-capture');
-
-    // Remove non-export elements
-    var killSel = ['.row-del','.title-pen','.radial','[data-nonexport]'].join(',');
-    clone.querySelectorAll(killSel).forEach(function(n){ n.remove(); });
-
-    // Hide title wrapper if no title
-    var title = clone.querySelector('.board-title');
-    if (title && title.textContent.replace(/\s+/g,'') === '') {
-      var wrap = title.closest('.board-title-wrap');
-      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
-      clone.classList.add('no-title');
-    }
-
-    // Sanitize images (avoid taint)
-    var shouldIgnore = function(el){
-      if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src') || '')) return true;
-      return false;
-    };
-    clone.querySelectorAll('img').forEach(function(img){
-      var src = img.getAttribute('src')||'';
-      if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
-        img.setAttribute('crossorigin','anonymous');
-      }
-    });
-
-    // Inline reset to kill animations/filters in the clone only
-    var reset = document.createElement('style');
-    reset.textContent = `
-      .exporting *{ animation:none !important; transition:none !important; }
-      .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
-      .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
-      .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
-    `;
-    clone.appendChild(reset);
-
-    // Fix width
-    var w = panel.getBoundingClientRect().width;
-    clone.style.width = w + 'px';
-
-    cloneWrap.appendChild(clone);
-    document.body.appendChild(cloneWrap);
     overlay.style.display='flex';
 
-    html2canvas(clone, {
+    // Use onclone to sanitize the DOM inside html2canvas' internal clone.
+    html2canvas(panel, {
       backgroundColor: cssVar('--surface') || '#0f1115',
       scale: Math.min(2, window.devicePixelRatio || 1.5),
       useCORS: true,
       allowTaint: false,
-      imageTimeout: 0,
+      imageTimeout: 15000,
       foreignObjectRendering: false,
-      removeContainer: true,
+      logging: false,
       scrollX: 0,
       scrollY: 0,
-      logging: false,
-      width: clone.getBoundingClientRect().width,
+      width: panel.getBoundingClientRect().width,
       windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
-      ignoreElements: shouldIgnore
+      ignoreElements: function(el){
+        // ignore cross-origin images if any slipped into the board
+        if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src')||'')) return true;
+        // ignore the radial picker if visible in the subtree by accident
+        if (el.id === 'radialPicker') return true;
+        return false;
+      },
+      onclone: function(doc){
+        // target the cloned board
+        var clone = doc.querySelector('#'+panel.id);
+        if (!clone) return;
+
+        // mark exporting
+        clone.classList.add('exporting','desktop-capture');
+
+        // remove non-export bits
+        clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
+
+        // hide editable placeholder title if empty
+        var title = clone.querySelector('.board-title');
+        if (title && title.textContent.replace(/\s+/g,'') === '') {
+          var wrap = title.closest('.board-title-wrap');
+          if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+          clone.classList.add('no-title');
+        }
+
+        // stop animations/filters/transform to avoid shifting/blur
+        var reset = doc.createElement('style');
+        reset.textContent = `
+          .exporting *{ animation:none !important; transition:none !important; }
+          .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
+          .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
+          .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
+        `;
+        clone.appendChild(reset);
+
+        // ensure same width as live
+        var w = panel.getBoundingClientRect().width;
+        clone.style.width = w + 'px';
+
+        // make any same-origin <img> CORS-friendly
+        clone.querySelectorAll('img').forEach(function(img){
+          var src = img.getAttribute('src')||'';
+          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
+            img.setAttribute('crossorigin','anonymous');
+          }
+        });
+      }
     }).then(function(canvas){
       var a=document.createElement('a');
       a.href=canvas.toDataURL('image/png');
@@ -799,7 +818,6 @@ on($('#trashClear'),'click', function(){
       console.error('Export failed', err);
       alert('Sorry, something went wrong while exporting.');
     }).finally(function(){
-      if (cloneWrap && cloneWrap.parentNode) cloneWrap.parentNode.removeChild(cloneWrap);
       overlay.style.display='none';
     });
   });
@@ -869,13 +887,12 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
-/* ---------- Desktop inline-controls: merge into Image Storage ---------- */
+/* ---------- Desktop inline-controls merge (unchanged) ---------- */
 function setupDesktopControlsMerge(){
   var controls = $('.controls'); if(!controls) return;
   var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
   var trayPanel = $('#tray') ? $('#tray').closest('.panel') : null; if(!trayPanel) return;
 
-  // markers to restore when returning to mobile
   var homeMarker = document.createElement('div'); homeMarker.id='controlsHome';
   if (controlsPanel && !$('#controlsHome')) controlsPanel.insertBefore(homeMarker, controls);
 
@@ -894,7 +911,6 @@ function setupDesktopControlsMerge(){
       if (controls.parentNode !== inlineWrap){ inlineWrap.appendChild(controls); }
       document.body.classList.add('controls-merged');
     } else {
-      // restore title and controls
       if (titleHome && titleHome.parentNode && title && title.parentNode !== titleHome.parentNode){
         titleHome.parentNode.insertBefore(title, titleHome);
       }
@@ -909,10 +925,6 @@ function setupDesktopControlsMerge(){
 
   apply();
   on(window,'resize', debounce(apply, 120));
-
-  /* swap icons via URLs */
-  var undoIco = $('#undoBtn .ico'); if (undoIco) undoIco.innerHTML = '<img alt="" src="https://www.svgrepo.com/show/523076/undo-left-round-square.svg">';
-  var trashIco = $('#trashClear .ico'); if (trashIco) trashIco.innerHTML = '<img alt="" src="https://www.svgrepo.com/show/490254/trash-can.svg">';
 }
 
 /* ---------- Init ---------- */
