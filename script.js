@@ -1,5 +1,8 @@
 /* =========================================================
-   Tier Maker — JS (dark-only, springy picker, hardened export)
+   Tier Maker — JS (M3 polish, bursty picker, hardened export)
+   - Icon system (Kalai Oval style) + auto-swap in DOM
+   - Mobile picker now “bursts” from tapped circle
+   - PNG export renders a 1200px board identically on all screens
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -88,6 +91,36 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 /* ---------- Globals ---------- */
 var board=null, tray=null;
 
+/* =========================================================
+   ICONS: Kalai Oval-ish path set + helper
+   (If you want the exact SVGs from the collection, keep the
+   names and swap the path data 1-for-1.)
+========================================================= */
+var ICONS = {
+  add:        { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
+  menu:       { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
+  undo:       { vb:'0 0 24 24', d:'M7.1 7.9 4 11l3.1 3.1 1.4-1.4L7.8 12H13a5 5 0 1 1 0 10H6v-2h7a3 3 0 1 0 0-6H7.8l.7-.7-1.4-1.4z' },
+  trash:      { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
+  download:   { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
+  close:      { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
+  edit:       { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
+};
+function setIcon(container, name){
+  if(!container) return;
+  var spec = ICONS[name]; if(!spec) return;
+  container.innerHTML = '<svg viewBox="'+spec.vb+'" aria-hidden="true"><path d="'+spec.d+'"/></svg>';
+}
+/* Swap icons found in the page */
+function swapAllIcons(){
+  setIcon($('#addTierBtn .ico'),'add');
+  setIcon($('#undoBtn .ico'),'undo');
+  setIcon($('#trashClear .ico'),'trash');
+  setIcon($('#saveBtn .ico'),'download');
+  setIcon($('.title-pen'),'edit');
+  /* close icon for the radial picker */
+  setIcon($('#radialPicker .radial-close'),'close');
+}
+
 /* ---------- FLIP helper ---------- */
 function flipZones(zones, mutate){
   var prev=new Map();
@@ -132,7 +165,7 @@ function buildRowDom(){
 
   var del=document.createElement('button'); del.className='row-del'; del.type='button';
   del.setAttribute('aria-label','Delete row');
-  del.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7L12 12l-6.3-6.3-1.4 1.4L10.6 13.4l-6.3 6.3 1.4 1.4L12 14.4l6.3 6.3 1.4-1.4-6.3-6.3 6.3-6.3z"/></svg>';
+  setIcon(del, 'close'); // Kalai close
 
   labelWrap.appendChild(handle);
   labelWrap.appendChild(chip);
@@ -157,7 +190,7 @@ function tintFrom(color){
 function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
 
 /* ---------- Chip text fitter ---------- */
-var CHIP_STEPS=[32,28,24,22,20,18,16,14];
+var CHIP_STEPS=[34,32,28,26,24,22,20,18,16,14];
 function fitChipText(chip){
   if(!chip) return;
   chip.style.whiteSpace='normal';
@@ -397,6 +430,7 @@ on($('#undoBtn'),'click', function(){
       var row=tmp.firstElementChild;
       container.appendChild(row);
       var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
+      setIcon(del,'close');
       enableRowReorder(handle,row); enableClickToPlace(drop);
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
       on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
@@ -588,7 +622,7 @@ function enableRowReorder(handle, row){
   }
 }
 
-/* ---------- Radial picker (mobile) ---------- */
+/* ---------- Radial picker (mobile): burst from circle ---------- */
 var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
@@ -601,7 +635,7 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* Spring helper (overshoot) using WAAPI keyframes) */
+/* Easing spring helper */
 function springIn(el, delay){
   try{
     el.animate(
@@ -616,16 +650,38 @@ function springIn(el, delay){
   }catch(_){}
 }
 
+/* NEW: “explode” buttons outward from the tapped token center */
+function explodeFromCenter(btn, center, pos, j){
+  try{
+    var dx = pos.x - center.x, dy = pos.y - center.y;
+    btn.style.left = center.x+'px';
+    btn.style.top  = center.y+'px';
+    btn.animate(
+      [
+        { transform:'translate(-50%,-50%) scale(0.70)', opacity:0 },
+        { transform:'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px)) scale(1.10)', opacity:1, offset:.65 },
+        { transform:'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px)) scale(0.98)', opacity:1, offset:.85 },
+        { transform:'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px)) scale(1.00)', opacity:1 }
+      ],
+      { duration: 450, delay: j*24, easing:'cubic-bezier(.2,.8,.2,1)', fill:'both' }
+    );
+    // after animation, pin to final absolute position
+    setTimeout(function(){
+      btn.style.left = pos.x+'px';
+      btn.style.top  = pos.y+'px';
+      btn.style.transform = 'translate(-50%,-50%)';
+    }, 450 + j*24);
+  }catch(_){}
+}
+
 function openRadial(token){
   if(!radial||!isSmall()) return;
   radialForToken = token;
-  if (radialCloseBtn) radialCloseBtn.setAttribute('type','button'); // safety
+  if (radialCloseBtn) radialCloseBtn.setAttribute('type','button');
 
   var rect = token.getBoundingClientRect();
   var cx = rect.left + rect.width/2;
   var cy = rect.top + rect.height/2;
-
-  var nudgeX = (rect.left < 24) ? 18 : 0;
 
   var rows = $$('.tier-row');
   var labels = rows.map(function(r){ return rowLabel(r); });
@@ -634,7 +690,7 @@ function openRadial(token){
   var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
   var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
   var R=Math.max(BASE_R, need);
-  var center=uniformCenter(cx + nudgeX, cy, R);
+  var center=uniformCenter(cx, cy, R);
 
   var positions=[];
   for (var i=0;i<N;i++){
@@ -646,6 +702,8 @@ function openRadial(token){
 
   radialCloseBtn.style.left = center.x+'px';
   radialCloseBtn.style.top  = center.y+'px';
+  // close anim
+  springIn(radialCloseBtn, 40);
 
   radialOpts.innerHTML = '';
   for (let j=0;j<N;j++){
@@ -654,9 +712,6 @@ function openRadial(token){
       var pos = positions[j];
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
-      btn.style.left = pos.x+'px';
-      btn.style.top  = pos.y+'px';
-      btn.style.transitionDelay = (j*14)+'ms';
       var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
 
       on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
@@ -667,13 +722,10 @@ function openRadial(token){
       radialOpts.appendChild(btn);
       _radialGeo.push({row:row, btn:btn});
 
-      // spring-in
-      springIn(btn, j*24);
+      // explode from center to position
+      explodeFromCenter(btn, center, pos, j);
     })(j);
   }
-
-  // spring-in center close
-  springIn(radialCloseBtn, 40);
 
   function backdrop(ev){
     if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
@@ -691,7 +743,6 @@ function openRadial(token){
   radial.classList.remove('hidden');
   radial.classList.add('visible','show');
   radial.setAttribute('aria-hidden','false');
-  setTimeout(function(){ radial.classList.remove('show'); }, 160 + N*14);
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
 function closeRadial(){
@@ -711,7 +762,7 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT (more robust) ---------- */
+/* ---------- EXPORT: identical 1200px board on all screens ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -748,7 +799,9 @@ on($('#trashClear'),'click', function(){
 
     overlay.style.display='flex';
 
-    // Use onclone to sanitize the DOM inside html2canvas' internal clone.
+    // lock the UI during export (prevents layout jank mid-clone)
+    document.body.style.pointerEvents = 'none';
+
     html2canvas(panel, {
       backgroundColor: cssVar('--surface') || '#0f1115',
       scale: Math.min(2, window.devicePixelRatio || 1.5),
@@ -759,49 +812,48 @@ on($('#trashClear'),'click', function(){
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      width: panel.getBoundingClientRect().width,
-      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
+      windowWidth: 1300, // ensure desktop rules in clone
       ignoreElements: function(el){
-        // ignore cross-origin images if any slipped into the board
         if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src')||'')) return true;
-        // ignore the radial picker if visible in the subtree by accident
         if (el.id === 'radialPicker') return true;
         return false;
       },
       onclone: function(doc){
-        // target the cloned board
+        // Mark entire document clone as exporting to hit CSS width rules
+        doc.documentElement.classList.add('exporting','desktop-capture');
+
+        var wrap = doc.querySelector('.wrap');
+        if (wrap){
+          wrap.style.maxWidth='1200px';
+          wrap.style.width='1200px';
+        }
+
         var clone = doc.querySelector('#'+panel.id);
         if (!clone) return;
 
-        // mark exporting
-        clone.classList.add('exporting','desktop-capture');
-
-        // remove non-export bits
+        // remove non-export bits inside the board
         clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
 
         // hide editable placeholder title if empty
         var title = clone.querySelector('.board-title');
         if (title && title.textContent.replace(/\s+/g,'') === '') {
-          var wrap = title.closest('.board-title-wrap');
-          if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+          var wrapTitle = title.closest('.board-title-wrap');
+          if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
           clone.classList.add('no-title');
         }
 
-        // stop animations/filters/transform to avoid shifting/blur
+        // freeze animations / transforms everywhere
         var reset = doc.createElement('style');
         reset.textContent = `
           .exporting *{ animation:none !important; transition:none !important; }
           .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
           .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
           .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
+          .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
         `;
-        clone.appendChild(reset);
+        doc.head.appendChild(reset);
 
-        // ensure same width as live
-        var w = panel.getBoundingClientRect().width;
-        clone.style.width = w + 'px';
-
-        // make any same-origin <img> CORS-friendly
+        // ensure CORS for same-origin imgs
         clone.querySelectorAll('img').forEach(function(img){
           var src = img.getAttribute('src')||'';
           if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
@@ -819,6 +871,7 @@ on($('#trashClear'),'click', function(){
       alert('Sorry, something went wrong while exporting.');
     }).finally(function(){
       overlay.style.display='none';
+      document.body.style.pointerEvents = '';
     });
   });
 })();
@@ -887,7 +940,7 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
-/* ---------- Desktop inline-controls merge (unchanged) ---------- */
+/* ---------- Desktop inline-controls merge ---------- */
 function setupDesktopControlsMerge(){
   var controls = $('.controls'); if(!controls) return;
   var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
@@ -929,9 +982,9 @@ function setupDesktopControlsMerge(){
 
 /* ---------- Init ---------- */
 document.addEventListener('DOMContentLoaded', function start(){
-  maybeClearAutosaveOnReload();
-
   board = $('#tierBoard'); tray = $('#tray');
+
+  swapAllIcons();           // <— unify iconography
 
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
@@ -945,7 +998,6 @@ document.addEventListener('DOMContentLoaded', function start(){
   on($('#addTierBtn'),'click', function(){
     this.classList.add('bounce-anim');
     once(this,'animationend',()=>this.classList.remove('bounce-anim'));
-
     var row = createRow({label:'NEW', color: nextTierColor()});
     board.appendChild(row);
     var chip = $('.label-chip', row); if (chip) chip.focus();
