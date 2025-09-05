@@ -295,6 +295,14 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 }
 #imageInput{ color:var(--muted); }
 
+/* Creator spacing: give the file input a little air */
+.creator-grid .creator-line + .creator-line{ margin-top: 10px; }
+
+#imageInput{
+  margin-top: 6px;              /* nudge down a smidge */
+  display: inline-block;
+}
+
 /* ---------- Export safety ---------- */
 .exporting .token,
 .exporting .token:hover,
