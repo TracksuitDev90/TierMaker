@@ -1,5 +1,7 @@
 /* =========================================================
    Tier Maker — CSS (dark-only, glass-first, flat labels)
+   - Removes striped bg
+   - Spring animation for mobile picker
 ========================================================= */
 
 /* ---------- Reset ---------- */
@@ -25,38 +27,21 @@ a{color:inherit;text-decoration:none}
 :root{
   --surface:#0f1115; --surface-raised:#171a22; --card:#11141c;
   --text:#e8eaf0; --muted:#a7b0c0; --border:rgba(255,255,255,.08);
-  --shadow:0 10px 28px rgba(0,0,0,.35);
   --accent:#8b7dff; --brand:#d8ff3f;
-
-  --radius-xl: 18px;
-  --radius-xxl: 22px;
+  --radius-xl: 18px; --radius-xxl: 22px;
   --easing-out: cubic-bezier(.2,.8,.2,1);
   --easing-in: cubic-bezier(.4,0,1,1);
-}
-
-/* Perceptual color when supported */
-@supports (color: oklch(50% 0.2 200)){
-  :root{
-    --surface: oklch(16% 0.012 260);
-    --surface-raised: oklch(20% 0.012 260);
-    --card: oklch(18% 0.012 260);
-    --text: oklch(96% 0.01 260);
-    --muted: oklch(70% 0.03 260);
-    --accent: oklch(70% 0.14 300);
-    --brand: oklch(92% 0.25 120);
-    --border: color-mix(in oklch, var(--text) 8%, transparent);
-  }
 }
 
 /* ---------- Layout ---------- */
 .wrap{
   max-width:1200px;margin:0 auto;padding:clamp(16px,2.4vw,28px);
   display:flex;flex-direction:column;
+  /* NO stripes: keep it clean/deep */
   background-image:
     radial-gradient(1000px 500px at 10% -10%, rgba(255,255,255,.02), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, rgba(0,0,0,.12), transparent 60%),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 2px, transparent 2px 4px);
-  background-blend-mode: soft-light, normal, normal;
+    radial-gradient(900px 500px at 110% 10%, rgba(0,0,0,.12), transparent 60%);
+  background-blend-mode: soft-light, normal;
 }
 .header{display:flex;align-items:center;gap:14px;margin-bottom:14px}
 .brand{
@@ -73,7 +58,6 @@ a{color:inherit;text-decoration:none}
     linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.18)) border-box;
   border:1px solid transparent;
   border-radius:var(--radius-xl);
-  /* Material-ish elevation */
   box-shadow: 0 1px 1px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.18);
   padding:clamp(14px,1.8vw,18px); margin-bottom:16px; overflow:visible;
 }
@@ -81,8 +65,8 @@ a{color:inherit;text-decoration:none}
   .panel, .tier-drop{
     background:
       linear-gradient(180deg,
-        color-mix(in oklch, var(--surface-raised) 82%, transparent),
-        color-mix(in oklch, var(--surface-raised) 66%, transparent)) padding-box,
+        color-mix(in srgb, var(--surface-raised) 82%, transparent),
+        color-mix(in srgb, var(--surface-raised) 66%, transparent)) padding-box,
       linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.04)) border-box;
     border:1px solid transparent;
     backdrop-filter: blur(12px) saturate(1.2);
@@ -95,7 +79,6 @@ a{color:inherit;text-decoration:none}
     mix-blend-mode:soft-light; opacity:.8;
   }
 }
-
 .section-title{font-size:clamp(18px,2vw,24px);font-weight:900;margin:0 0 14px}
 
 /* ---------- Controls (mobile grid) ---------- */
@@ -108,7 +91,6 @@ a{color:inherit;text-decoration:none}
   height:56px;padding:0 18px;border-radius:var(--radius-xxl);
   background:var(--surface);color:var(--text);
   border:1px solid rgba(255,255,255,.08);
-  /* Material-ish elevation */
   box-shadow: 0 1px 1px rgba(0,0,0,.22), 0 3px 6px rgba(0,0,0,.18);
   transition:transform .08s ease,background .2s ease,border-color .2s ease,filter .2s ease;
 }
@@ -117,25 +99,17 @@ a{color:inherit;text-decoration:none}
 .btn .ico{width:22px;height:22px;display:grid;place-items:center}
 .btn .ico svg,.btn .ico img{width:22px;height:22px;display:block}
 
-/* Buttons — flat colors */
-#addTierBtn{background:#02ec88;color:#111111;border-color:rgba(0,0,0,.12)}
-#undoBtn{background:#ffcc3f;color:#111111;border-color:rgba(0,0,0,.12)}
-#trashClear{background:#F05C58;color:#111111;border-color:rgba(255,255,255,.18)}
+/* Flat accent buttons */
+#addTierBtn{background:#02ec88;color:#111;border-color:rgba(0,0,0,.12)}
+#undoBtn{background:#ffcc3f;color:#111;border-color:rgba(0,0,0,.12)}
+#trashClear{background:#F05C58;color:#111;border-color:rgba(255,255,255,.18)}
 #saveBtn{background:#7901ff;color:#FFF;border-color:rgba(255,255,255,.15)}
 
 .btn.small{height:42px;padding:0 12px;border-radius:12px;font-weight:700}
 
-/* Bounce on click */
+/* Click bounce */
 @keyframes btn-bounce{0%{transform:scale(1)}30%{transform:scale(1.08)}60%{transform:scale(0.98)}100%{transform:scale(1)}}
 .btn.bounce-anim{animation:btn-bounce .48s cubic-bezier(.34,1.56,.64,1)}
-
-/* ---------- Creator ---------- */
-.creator-grid{display:grid;gap:12px}
-.creator-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.input{flex:1 1 260px;height:48px;padding:0 14px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:12px}
-.color-dot{width:40px;height:40px;border-radius:999px;border:3px solid var(--surface-raised);box-shadow:0 4px 18px rgba(0,0,0,.25) inset,0 2px 8px rgba(0,0,0,.2)}
-.help{color:var(--muted);font-weight:600;margin-top:10px}
-.help strong{color:var(--accent)}
 
 /* ---------- Board ---------- */
 .board-title-wrap{display:flex;align-items:center;gap:8px;margin:0 0 18px}
@@ -161,27 +135,20 @@ a{color:inherit;text-decoration:none}
   overflow:hidden;border-radius:var(--radius-xl);
   box-shadow: 0 1px 1px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.18);
 }
-.tier-row:hover{
-  box-shadow: 0 2px 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.18);
-  transform:translateY(-1px);
-}
+.tier-row:hover{ box-shadow: 0 2px 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.18); transform:translateY(-1px); }
 .tier-row.removing{max-height:0!important;opacity:0}
-@media (max-width:768px){
-  #tierBoard{gap:16px}
-  .tier-row{grid-template-columns:140px 1fr}
-}
+@media (max-width:768px){ .tier-row{grid-template-columns:140px 1fr} }
 
-/* --- TIER LABEL COLUMN: flat color, no glass/no glow --- */
+/* --- TIER LABEL COLUMN: flat color only --- */
 .tier-label{
   position:relative;
-  background:transparent;      /* JS paints solid color inline */
+  background:transparent;               /* JS paints solid color inline */
   border:1px solid rgba(0,0,0,.14);
   border-radius:16px;
   padding:12px;
   display:flex; align-items:center; justify-content:center;
   min-height:calc(110px + 28px);
-  overflow:hidden;
-  box-shadow:none;
+  overflow:hidden; box-shadow:none;
 }
 .tier-label::before{content:none !important;}
 
@@ -192,7 +159,7 @@ a{color:inherit;text-decoration:none}
   font-weight:900;font-size:32px;line-height:1.15;
   text-transform:uppercase;letter-spacing:.5px;user-select:none;
   white-space:normal;text-align:center;
-  padding:10px 12px 12px; /* avoid descender clipping */
+  padding:10px 12px 12px; /* more bottom padding avoids clipping */
   overflow:hidden;word-break:break-word;hyphens:auto;overflow-wrap:break-word;
 }
 .row-handle{display:none}
@@ -207,7 +174,7 @@ a{color:inherit;text-decoration:none}
 .row-del svg{width:16px;height:16px;fill:currentColor}
 .exporting .row-del{display:none!important}
 
-/* Drops (glassy + material-ish elevation) */
+/* Drops (glassy) */
 .tier-drop{
   position:relative;
   background:var(--card);
@@ -215,18 +182,16 @@ a{color:inherit;text-decoration:none}
   border-radius:16px;
   padding:14px;
   display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
-  align-content:start;gap:10px;            /* tightened by 4px */
+  align-content:start;gap:10px; /* tightened by 4px */
   min-height:calc(110px + 28px);
   will-change:contents;
   box-shadow: 0 2px 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.18);
 }
 .tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
 .dropzone.drag-over{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
-@media (max-width:768px){
-  .tier-drop{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
-}
+@media (max-width:768px){ .tier-drop{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} }
 
-/* Ambient sweep on desktop when a token lands */
+/* Desktop ambient sweep on drop */
 @keyframes drop-sweep{from{background-position:-200% 0}to{background-position:200% 0}}
 @media (hover:hover){
   .tier-drop::after{content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0;}
@@ -270,9 +235,7 @@ a{color:inherit;text-decoration:none}
 }
 
 /* Smaller tokens on mobile */
-@media (max-width:768px){
-  .token{width:96px;height:96px}
-}
+@media (max-width:768px){ .token{width:96px;height:96px} }
 
 /* Drag feedback */
 .token.dragging-cue{ transform:scale(1.05); box-shadow:0 8px 20px rgba(0,0,0,.4) }
@@ -299,13 +262,10 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 /* ---------- Image Storage ---------- */
 #tray{
   background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;
-  /* Material-ish elevation */
   box-shadow: 0 1px 1px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.18);
   padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:14px;
 }
-@media (max-width:768px){
-  #tray{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
-}
+@media (max-width:768px){ #tray{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} }
 
 /* ---------- A11y ---------- */
 .sr,.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
@@ -315,13 +275,21 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .radial.hidden{display:none}
 .radial-options{position:relative;width:100%;height:100%}
 .radial-option{position:absolute;width:56px;height:56px;border-radius:999px;transform:translate(-50%,-50%)}
+
+/* Material-like spring pop for dots */
+@keyframes picker-spring {
+  0%   { transform:scale(.65); opacity:0; }
+  60%  { transform:scale(1.15); opacity:1; }
+  85%  { transform:scale(.98); }
+  100% { transform:scale(1); }
+}
 .radial-option .dot{
   width:42px;height:42px;border-radius:999px;display:grid;place-items:center;
   font-weight:900;font-size:13px;background:#fff;color:#111;
   border:1px solid rgba(0,0,0,.1);box-shadow:0 2px 10px rgba(0,0,0,.15);
-  transform:scale(.2);opacity:0;transition:transform .16s ease,opacity .16s ease,box-shadow .12s ease,border-color .12s ease;
+  transform:scale(1);opacity:1; /* base */
 }
-.radial.visible .dot,.radial.show .dot{opacity:1;transform:scale(1)}
+.radial.animate-in .radial-option .dot{ animation:picker-spring 320ms cubic-bezier(.2,.8,.2,1) both; }
 .radial-option.is-hot .dot{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.22);transform:scale(1.06)}
 .radial-close{position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:999px;border:1px solid var(--border);background:var(--surface-raised);color:var(--text);display:grid;place-items:center;box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .radial-close svg{width:22px;height:22px;fill:currentColor}
@@ -352,8 +320,8 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 @media (min-width:1024px){
   .controls-inline{
     display:flex; gap:12px; align-items:center; flex-wrap:nowrap;
-    /* balanced nudge toward center */
-    margin-left:clamp(40px, 9vw, 180px);
+    /* move a little closer toward the center of the title row */
+    margin-left:clamp(28px, 8.2vw, 160px);
   }
   .controls-inline .btn{height:44px; padding:0 14px; border-radius:14px; font-weight:800}
   .controls-inline .ico svg,.controls-inline .ico img{width:18px;height:18px}
