@@ -28,15 +28,13 @@ a{color:inherit;text-decoration:none}
   --shadow:0 10px 28px rgba(0,0,0,.35);
   --accent:#8b7dff; --brand:#d8ff3f;
 
-  --elev-ambient: 0 10px 30px rgba(0,0,0,.28);
-  --elev-key: 0 2px 8px rgba(0,0,0,.35);
   --radius-xl: 18px;
   --radius-xxl: 22px;
   --easing-out: cubic-bezier(.2,.8,.2,1);
   --easing-in: cubic-bezier(.4,0,1,1);
 }
 
-/* Prefer perceptual color & mixes when supported */
+/* Perceptual color when supported */
 @supports (color: oklch(50% 0.2 200)){
   :root{
     --surface: oklch(16% 0.012 260);
@@ -67,7 +65,7 @@ a{color:inherit;text-decoration:none}
 }
 @media (max-width:1024px){.brand{position:static}}
 
-/* ---------- Panels (glassy) ---------- */
+/* ---------- Panels (glassy surfaces) ---------- */
 .panel{
   position:relative;
   background:
@@ -75,11 +73,11 @@ a{color:inherit;text-decoration:none}
     linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.18)) border-box;
   border:1px solid transparent;
   border-radius:var(--radius-xl);
-  box-shadow:var(--elev-ambient), var(--elev-key);
+  /* Material-ish elevation */
+  box-shadow: 0 1px 1px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.18);
   padding:clamp(14px,1.8vw,18px); margin-bottom:16px; overflow:visible;
 }
 @supports (backdrop-filter: blur(8px)) {
-  /* glass on panels + drop zones ONLY (labels are flat) */
   .panel, .tier-drop{
     background:
       linear-gradient(180deg,
@@ -87,21 +85,20 @@ a{color:inherit;text-decoration:none}
         color-mix(in oklch, var(--surface-raised) 66%, transparent)) padding-box,
       linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.04)) border-box;
     border:1px solid transparent;
-    backdrop-filter: blur(14px) saturate(1.25);
+    backdrop-filter: blur(12px) saturate(1.2);
   }
   .panel::before, .tier-drop::before{
     content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
     background:
       linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0) 18%),
-      radial-gradient(60% 40% at 50% -10%, rgba(255,255,255,.12), transparent 70%);
-    mix-blend-mode:soft-light; opacity:.85;
+      radial-gradient(60% 40% at 50% -10%, rgba(255,255,255,.10), transparent 70%);
+    mix-blend-mode:soft-light; opacity:.8;
   }
 }
 
-/* Section titles */
 .section-title{font-size:clamp(18px,2vw,24px);font-weight:900;margin:0 0 14px}
 
-/* ---------- Controls row (original; mobile only now) ---------- */
+/* ---------- Controls (mobile grid) ---------- */
 .controls{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:900px){.controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:720px){.controls{grid-template-columns:1fr 1fr}}
@@ -111,7 +108,8 @@ a{color:inherit;text-decoration:none}
   height:56px;padding:0 18px;border-radius:var(--radius-xxl);
   background:var(--surface);color:var(--text);
   border:1px solid rgba(255,255,255,.08);
-  box-shadow:0 .5px 0 rgba(255,255,255,.12) inset, 0 10px 24px rgba(0,0,0,.25);
+  /* Material-ish elevation */
+  box-shadow: 0 1px 1px rgba(0,0,0,.22), 0 3px 6px rgba(0,0,0,.18);
   transition:transform .08s ease,background .2s ease,border-color .2s ease,filter .2s ease;
 }
 .btn:hover{transform:translateY(-1px)}
@@ -161,12 +159,10 @@ a{color:inherit;text-decoration:none}
   display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch;
   transition:max-height .28s ease, opacity .24s ease, box-shadow .25s var(--easing-out), transform .25s var(--easing-out);
   overflow:hidden;border-radius:var(--radius-xl);
-  box-shadow:var(--elev-ambient);
+  box-shadow: 0 1px 1px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.18);
 }
 .tier-row:hover{
-  box-shadow:
-    0 20px 44px rgba(0,0,0,.40),
-    0 6px 18px rgba(0,0,0,.32);
+  box-shadow: 0 2px 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.18);
   transform:translateY(-1px);
 }
 .tier-row.removing{max-height:0!important;opacity:0}
@@ -178,16 +174,16 @@ a{color:inherit;text-decoration:none}
 /* --- TIER LABEL COLUMN: flat color, no glass/no glow --- */
 .tier-label{
   position:relative;
-  background:transparent;      /* JS sets a solid color inline */
+  background:transparent;      /* JS paints solid color inline */
   border:1px solid rgba(0,0,0,.14);
   border-radius:16px;
   padding:12px;
   display:flex; align-items:center; justify-content:center;
   min-height:calc(110px + 28px);
   overflow:hidden;
-  box-shadow:none;             /* flat */
+  box-shadow:none;
 }
-.tier-label::before{content:none !important;} /* no glass highlight */
+.tier-label::before{content:none !important;}
 
 .label-chip{
   position:relative;width:100%;max-width:100%;
@@ -211,7 +207,7 @@ a{color:inherit;text-decoration:none}
 .row-del svg{width:16px;height:16px;fill:currentColor}
 .exporting .row-del{display:none!important}
 
-/* Drops (glassy) */
+/* Drops (glassy + material-ish elevation) */
 .tier-drop{
   position:relative;
   background:var(--card);
@@ -222,7 +218,7 @@ a{color:inherit;text-decoration:none}
   align-content:start;gap:10px;            /* tightened by 4px */
   min-height:calc(110px + 28px);
   will-change:contents;
-  box-shadow:var(--elev-ambient), var(--elev-key);
+  box-shadow: 0 2px 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.18);
 }
 .tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
 .dropzone.drag-over{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
@@ -302,7 +298,9 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 
 /* ---------- Image Storage ---------- */
 #tray{
-  background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+  background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;
+  /* Material-ish elevation */
+  box-shadow: 0 1px 1px rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.18);
   padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:14px;
 }
 @media (max-width:768px){
@@ -352,22 +350,18 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 
 /* ---------- Desktop inline-controls inside Image Storage ---------- */
 @media (min-width:1024px){
-  .controls-inline{display:flex; gap:12px; align-items:center; flex-wrap:nowrap;
-    /* nudge toward center for balance across widths */
+  .controls-inline{
+    display:flex; gap:12px; align-items:center; flex-wrap:nowrap;
+    /* balanced nudge toward center */
     margin-left:clamp(40px, 9vw, 180px);
   }
   .controls-inline .btn{height:44px; padding:0 14px; border-radius:14px; font-weight:800}
   .controls-inline .ico svg,.controls-inline .ico img{width:18px;height:18px}
   .controls-merged .controls-panel{ display:none !important; }
 
-  /* Title + buttons on one line; centered-ish balance */
   .section-bar{
-    display:flex;
-    align-items:center;
-    justify-content:flex-start;
-    column-gap:12px;
-    row-gap:8px;
-    margin-bottom:12px;
+    display:flex; align-items:center; justify-content:flex-start;
+    column-gap:12px; row-gap:8px; margin-bottom:12px;
   }
   .section-bar .section-title{margin:0}
 }
