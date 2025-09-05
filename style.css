@@ -1,12 +1,5 @@
 /* =========================================================
-   Tier Maker — CSS (polished)
-   - layered depth, gradient borders, glass accents
-   - mobile spacing + smaller tokens
-   - collapse animation for row deletion
-   - Add Tier / Save PNG bounce
-   - title spacing, export safety, desktop-capture
-   - subtle token shimmer (dragging)
-   - ambient gradient sweep on drop (desktop)
+   Tier Maker — CSS (unified, glass + depth + polish)
 ========================================================= */
 
 /* ---------- Reset ---------- */
@@ -28,14 +21,14 @@ input,textarea{font:inherit;color:inherit}
 }
 a{color:inherit;text-decoration:none}
 
-/* ---------- Theme (base) ---------- */
+/* ---------- Theme ---------- */
 :root{
   --surface:#0f1115; --surface-raised:#171a22; --card:#11141c;
   --text:#e8eaf0; --muted:#a7b0c0; --border:rgba(255,255,255,.08);
   --shadow:0 10px 28px rgba(0,0,0,.35);
   --accent:#8b7dff; --brand:var(--neon); --neon:#d8ff3f;
 
-  /* extras for polish */
+  /* depth + motion tokens */
   --elev-ambient: 0 10px 30px rgba(0,0,0,.28);
   --elev-key: 0 2px 8px rgba(0,0,0,.35);
   --radius-xl: 18px;
@@ -50,7 +43,7 @@ a{color:inherit;text-decoration:none}
   --accent:#6b5fff; --brand:#000; --neon:#c8ff45;
 }
 
-/* Prefer OKLCH + color-mix when available */
+/* Prefer perceptual color & mixes when supported */
 @supports (color: oklch(50% 0.2 200)){
   :root{
     --surface: oklch(16% 0.012 260);
@@ -72,7 +65,7 @@ a{color:inherit;text-decoration:none}
   }
 }
 
-/* keep legacy no-op (radial scroll lock) */
+/* prevent page creeping while radial picker is open (legacy) */
 body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 /* ---------- Layout ---------- */
@@ -80,7 +73,7 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
   max-width:1200px;margin:0 auto;padding:clamp(16px,2.4vw,28px);
   display:flex;flex-direction:column;
 
-  /* tasteful grain & ambient */
+  /* subtle ambient & grain */
   background-image:
     radial-gradient(1000px 500px at 10% -10%, rgba(255,255,255,.02), transparent 60%),
     radial-gradient(900px 500px at 110% 10%, rgba(0,0,0,.12), transparent 60%),
@@ -94,8 +87,9 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 }
 @media (max-width:1024px){.brand{position:static}}
 
-/* ---------- Panels with gradient borders ---------- */
+/* ---------- Panels (gradient borders + depth) ---------- */
 .panel{
+  position:relative;
   background:
     linear-gradient(var(--surface-raised), var(--surface-raised)) padding-box,
     linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.18)) border-box;
@@ -107,6 +101,29 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
     var(--elev-ambient), var(--elev-key);
   padding:clamp(14px,1.8vw,18px); margin-bottom:16px; overflow:visible;
 }
+
+/* Glass enhancement (progressive) */
+@supports (backdrop-filter: blur(8px)) {
+  .panel,
+  .tier-label,
+  .tier-drop{
+    background:
+      linear-gradient(180deg,
+        color-mix(in oklch, var(--surface-raised) 86%, transparent),
+        color-mix(in oklch, var(--surface-raised) 72%, transparent)) padding-box,
+      linear-gradient(145deg, rgba(255,255,255,.18), rgba(255,255,255,.04)) border-box;
+    border:1px solid transparent;
+    backdrop-filter: blur(10px) saturate(1.15);
+  }
+  .panel::before,
+  .tier-label::before,
+  .tier-drop::before{
+    content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 18%);
+    mix-blend-mode:soft-light; opacity:.7;
+  }
+}
+
 .section-title{font-size:clamp(18px,2vw,24px);font-weight:900;margin:0 0 14px}
 
 /* ---------- Controls row ---------- */
@@ -127,7 +144,7 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .btn .ico{width:22px;height:22px;display:grid;place-items:center}
 .btn .ico svg{width:22px;height:22px;fill:currentColor}
 
-/* Bounce on click */
+/* Bounce on click (JS toggles .bounce-anim) */
 @keyframes btn-bounce{0%{transform:scale(1)}30%{transform:scale(1.08)}60%{transform:scale(0.98)}100%{transform:scale(1)}}
 .btn.bounce-anim{animation:btn-bounce .48s cubic-bezier(.34,1.56,.64,1)}
 
@@ -151,7 +168,7 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 /* ---------- Board ---------- */
 .board-title-wrap{
-  display:flex;align-items:center;gap:8px;margin:0 0 18px; /* +6px spacing */
+  display:flex;align-items:center;gap:8px;margin:0 0 18px; /* +6px spacing bump */
 }
 .title-pen{
   display:inline-flex;align-items:center;justify-content:center;
@@ -176,11 +193,19 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 /* ---------- Tier board grid ---------- */
 #tierBoard{display:grid;gap:12px}
 .tier-row{
+  position:relative;
   display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch;
   transition:max-height .28s ease, opacity .24s ease, box-shadow .25s var(--easing-out), transform .25s var(--easing-out);
   overflow:hidden;border-radius:var(--radius-xl);box-shadow:var(--elev-ambient);
 }
-.tier-row:hover{ box-shadow:0 16px 38px rgba(0,0,0,.40); transform:translateY(-1px); }
+.tier-row:hover{
+  box-shadow:
+    0 .5px 0 rgba(255,255,255,.10) inset,
+    0 -1px 0 rgba(0,0,0,.22) inset,
+    0 20px 44px rgba(0,0,0,.40),
+    0 6px 18px rgba(0,0,0,.32);
+  transform:translateY(-1px);
+}
 .tier-row.removing{max-height:0!important;opacity:0}
 @media (max-width:768px){
   #tierBoard{gap:16px}
@@ -202,12 +227,12 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
   font-weight:900;font-size:32px;line-height:1.15;
   text-transform:uppercase;letter-spacing:.5px;user-select:none;
   white-space:normal;text-align:center;
-  padding:10px 12px 12px; /* extra inner room to avoid clipping */
+  padding:10px 12px 12px; /* room so descenders never clip */
   overflow:hidden;word-break:break-word;hyphens:auto;overflow-wrap:break-word;
 }
 .row-handle{display:none}
 
-/* delete button */
+/* Row delete X (auto-darker) */
 .row-del{
   position:absolute;right:8px;bottom:8px;width:36px;height:36px;border-radius:9px;
   color:#fff;display:grid;place-items:center;
@@ -234,12 +259,9 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 /* Ambient gradient sweep when a token lands (desktop only) */
 @keyframes drop-sweep{from{background-position:-200% 0}to{background-position:200% 0}}
 @media (hover:hover){
-  .tier-drop::after{
-    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0;
-  }
-  /* Play when a freshly-dropped token has .animate-drop (added by JS) */
+  .tier-drop::after{content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0;}
   .tier-drop:has(.token.animate-drop)::after{
-    background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
     background-size:200% 100%;
     animation:drop-sweep .9s var(--easing-out);
     opacity:1;
@@ -250,19 +272,14 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .token{
   position:relative;width:110px;height:110px;border-radius:999px;background:#7da7ff;
   display:flex;align-items:center;justify-content:center;
-  user-select:none;cursor:pointer;transform:translateZ(0);transition:transform .18s var(--easing-out), box-shadow .18s var(--easing-out), filter .2s;
+  user-select:none;cursor:pointer;transform:translateZ(0);
+  transition:transform .18s var(--easing-out), box-shadow .18s var(--easing-out), filter .2s;
   will-change:transform;
   border:1px solid rgba(255,255,255,.06);
   box-shadow:
     0 .5px 0 rgba(255,255,255,.25) inset,
     0 -1px 8px rgba(0,0,0,.25) inset,
     0 10px 24px rgba(0,0,0,.30), 0 2px 6px rgba(0,0,0,.22);
-}
-.token::after{
-  /* subtle rim light */
-  content:""; position:absolute; inset:0; border-radius:999px;
-  background:radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,.35), transparent 60%);
-  pointer-events:none; mix-blend-mode:soft-light; opacity:.6;
 }
 .token:hover{transform:translateY(-2px) scale(1.015)}
 .token:active{transform:translateY(0) scale(.995)}
@@ -275,25 +292,39 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .token img{width:100%;height:100%;object-fit:cover;border-radius:999px;pointer-events:none}
 .token.selected{outline:3px solid var(--accent);outline-offset:4px}
 
-/* Smaller tokens on mobile for readability */
+/* tasteful rim light */
+.token::after{
+  content:""; position:absolute; inset:0; border-radius:999px;
+  background:radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,.35), transparent 60%);
+  pointer-events:none; mix-blend-mode:soft-light; opacity:.65;
+}
+
+/* Smaller tokens on mobile */
 @media (max-width:768px){
   .token{width:96px;height:96px}
 }
 
-/* Drag feedback: stronger ghost shadow + scale via JS 'dragging-cue' */
-.dragging-cue{box-shadow:0 8px 20px rgba(0,0,0,.4)}
+/* Drag feedback class added by JS */
+.token.dragging-cue{ transform:scale(1.05); box-shadow:0 8px 20px rgba(0,0,0,.4) }
 
-/* Subtle token shimmer while dragging (ghost + any element with .dragging-cue) */
-@keyframes token-shimmer{to{transform:translateX(150%)}}
+/* Stationary, pulsing glint while dragging (no sweep/trail) */
+@keyframes glint-pulse{ 0%,100%{opacity:.45;transform:scale(1)} 50%{opacity:.68;transform:scale(1.035)} }
 .drag-ghost,
-.token.dragging-cue{position:fixed}
+.token.dragging-cue{ isolation:isolate; }
+
 .drag-ghost::before,
 .token.dragging-cue::before{
   content:""; position:absolute; inset:-2px; border-radius:999px; pointer-events:none;
-  background:linear-gradient(130deg, transparent 0%, rgba(255,255,255,.18) 35%, rgba(255,255,255,.45) 48%, rgba(255,255,255,.18) 60%, transparent 100%);
-  transform:translateX(-150%); animation:token-shimmer 1s linear infinite; mix-blend-mode:screen;
+  background:radial-gradient(120% 95% at 28% 22%, rgba(255,255,255,.55), rgba(255,255,255,.22) 36%, transparent 60%);
+  mix-blend-mode:screen; animation:glint-pulse .9s ease-in-out infinite;
 }
-.drag-ghost{left:0;top:0;z-index:50;pointer-events:none;width:110px;height:110px;border-radius:999px;opacity:.92;transform:translate3d(0,0,0);will-change:transform;filter:drop-shadow(0 18px 28px rgba(0,0,0,.45))}
+
+/* FLIP + drop animations */
+.token.flip-anim{transition:transform 180ms ease}
+.drag-ghost{
+  position:fixed;left:0;top:0;z-index:50;pointer-events:none;width:110px;height:110px;border-radius:999px;
+  opacity:.92;transform:translate3d(0,0,0);will-change:transform;filter:drop-shadow(0 18px 28px rgba(0,0,0,.45))
+}
 @media (max-width:768px){.drag-ghost{width:96px;height:96px}}
 .drag-hidden{opacity:.25}
 body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
@@ -328,7 +359,7 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .radial-close{position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:999px;border:1px solid var(--border);background:var(--surface-raised);color:var(--text);display:grid;place-items:center;box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .radial-close svg{width:22px;height:22px;fill:currentColor}
 
-/* Glassy enhancement for supported browsers */
+/* Glassy enhancement for picker/title on supported browsers */
 @supports (backdrop-filter: blur(8px)) {
   .radial{backdrop-filter:blur(10px) saturate(1.1);background:color-mix(in oklch, var(--surface) 40%, transparent)}
   .board-title-wrap{background:color-mix(in oklch, var(--surface-raised) 78%, transparent);backdrop-filter:blur(6px);padding:8px 10px;border-radius:12px}
@@ -346,6 +377,14 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .exporting .token:hover,
 .exporting .animate-drop,
 .exporting .flip-anim{ transform:none !important; }
+
+.exporting .panel,
+.exporting .tier-label,
+.exporting .tier-drop{
+  backdrop-filter:none !important;
+  background: var(--surface-raised) !important;
+  border-color: var(--border) !important;
+}
 
 /* Force desktop layout + width during capture on mobile */
 .exporting.desktop-capture .wrap{max-width:1200px;width:1200px}
