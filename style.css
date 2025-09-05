@@ -1,5 +1,5 @@
 /* =========================================================
-   Tier Maker — CSS (dark-only, inline controls, polish)
+   Tier Maker — CSS (dark-only, glass-first, flat labels)
 ========================================================= */
 
 /* ---------- Reset ---------- */
@@ -67,7 +67,7 @@ a{color:inherit;text-decoration:none}
 }
 @media (max-width:1024px){.brand{position:static}}
 
-/* ---------- Panels (gradient borders + depth) ---------- */
+/* ---------- Panels (glassy) ---------- */
 .panel{
   position:relative;
   background:
@@ -75,29 +75,30 @@ a{color:inherit;text-decoration:none}
     linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.18)) border-box;
   border:1px solid transparent;
   border-radius:var(--radius-xl);
-  box-shadow:
-    0 .5px 0 rgba(255,255,255,.08) inset,
-    0 -1px 0 rgba(0,0,0,.25) inset,
-    var(--elev-ambient), var(--elev-key);
+  box-shadow:var(--elev-ambient), var(--elev-key);
   padding:clamp(14px,1.8vw,18px); margin-bottom:16px; overflow:visible;
 }
 @supports (backdrop-filter: blur(8px)) {
-  .panel, .tier-label, .tier-drop{
+  /* glass on panels + drop zones ONLY (labels are flat) */
+  .panel, .tier-drop{
     background:
       linear-gradient(180deg,
-        color-mix(in oklch, var(--surface-raised) 86%, transparent),
-        color-mix(in oklch, var(--surface-raised) 72%, transparent)) padding-box,
-      linear-gradient(145deg, rgba(255,255,255,.18), rgba(255,255,255,.04)) border-box;
+        color-mix(in oklch, var(--surface-raised) 82%, transparent),
+        color-mix(in oklch, var(--surface-raised) 66%, transparent)) padding-box,
+      linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.04)) border-box;
     border:1px solid transparent;
-    backdrop-filter: blur(10px) saturate(1.15);
+    backdrop-filter: blur(14px) saturate(1.25);
   }
-  .panel::before, .tier-label::before, .tier-drop::before{
+  .panel::before, .tier-drop::before{
     content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
-    background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 18%);
-    mix-blend-mode:soft-light; opacity:.7;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0) 18%),
+      radial-gradient(60% 40% at 50% -10%, rgba(255,255,255,.12), transparent 70%);
+    mix-blend-mode:soft-light; opacity:.85;
   }
 }
 
+/* Section titles */
 .section-title{font-size:clamp(18px,2vw,24px);font-weight:900;margin:0 0 14px}
 
 /* ---------- Controls row (original; mobile only now) ---------- */
@@ -118,7 +119,7 @@ a{color:inherit;text-decoration:none}
 .btn .ico{width:22px;height:22px;display:grid;place-items:center}
 .btn .ico svg,.btn .ico img{width:22px;height:22px;display:block}
 
-/* Buttons — flat colors (reverted) */
+/* Buttons — flat colors */
 #addTierBtn{background:#02ec88;color:#111111;border-color:rgba(0,0,0,.12)}
 #undoBtn{background:#ffcc3f;color:#111111;border-color:rgba(0,0,0,.12)}
 #trashClear{background:#F05C58;color:#111111;border-color:rgba(255,255,255,.18)}
@@ -159,12 +160,11 @@ a{color:inherit;text-decoration:none}
   position:relative;
   display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch;
   transition:max-height .28s ease, opacity .24s ease, box-shadow .25s var(--easing-out), transform .25s var(--easing-out);
-  overflow:hidden;border-radius:var(--radius-xl);box-shadow:var(--elev-ambient);
+  overflow:hidden;border-radius:var(--radius-xl);
+  box-shadow:var(--elev-ambient);
 }
 .tier-row:hover{
   box-shadow:
-    0 .5px 0 rgba(255,255,255,.10) inset,
-    0 -1px 0 rgba(0,0,0,.22) inset,
     0 20px 44px rgba(0,0,0,.40),
     0 6px 18px rgba(0,0,0,.32);
   transform:translateY(-1px);
@@ -175,24 +175,20 @@ a{color:inherit;text-decoration:none}
   .tier-row{grid-template-columns:140px 1fr}
 }
 
-/* --- TIER LABEL COLUMN --- */
+/* --- TIER LABEL COLUMN: flat color, no glass/no glow --- */
 .tier-label{
   position:relative;
-  border:1px solid var(--border);
+  background:transparent;      /* JS sets a solid color inline */
+  border:1px solid rgba(0,0,0,.14);
   border-radius:16px;
   padding:12px;
   display:flex; align-items:center; justify-content:center;
   min-height:calc(110px + 28px);
   overflow:hidden;
-
-  /* stronger inner glow / light bleed */
-  box-shadow:
-    0 .5px 0 rgba(255,255,255,.12) inset,
-    0 -1px 0 rgba(0,0,0,.28) inset,
-    inset 0 28px 90px rgba(255,255,255,.12),
-    inset 0 -20px 48px rgba(0,0,0,.35),
-    var(--elev-ambient), var(--elev-key);
+  box-shadow:none;             /* flat */
 }
+.tier-label::before{content:none !important;} /* no glass highlight */
+
 .label-chip{
   position:relative;width:100%;max-width:100%;
   background:transparent;color:#111;
@@ -215,36 +211,23 @@ a{color:inherit;text-decoration:none}
 .row-del svg{width:16px;height:16px;fill:currentColor}
 .exporting .row-del{display:none!important}
 
-/* Drops */
+/* Drops (glassy) */
 .tier-drop{
   position:relative;
-  background:var(--card);border:1px solid var(--border);border-radius:16px;
-  padding:14px;display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
-  align-content:start;gap:10px; /* tightened by 4px */
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:14px;
+  display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
+  align-content:start;gap:10px;            /* tightened by 4px */
   min-height:calc(110px + 28px);
   will-change:contents;
-
-  /* stronger inner glow / light bleed */
-  box-shadow:
-    0 .5px 0 rgba(255,255,255,.12) inset,
-    0 -1px 0 rgba(0,0,0,.28) inset,
-    inset 0 28px 90px rgba(255,255,255,.12),
-    inset 0 -20px 48px rgba(0,0,0,.35),
-    var(--elev-ambient), var(--elev-key);
+  box-shadow:var(--elev-ambient), var(--elev-key);
 }
 .tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
 .dropzone.drag-over{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
 @media (max-width:768px){
   .tier-drop{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
-}
-
-/* Enhance the glassy highlight sweep for both */
-.tier-label::before,
-.tier-drop::before{
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,0) 20%),
-    radial-gradient(60% 40% at 50% -10%, rgba(255,255,255,.16), transparent 70%);
-  opacity:.9; /* brighter */
 }
 
 /* Ambient sweep on desktop when a token lands */
@@ -357,29 +340,32 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .exporting .flip-anim{ transform:none !important; }
 
 .exporting .panel,
-.exporting .tier-label,
 .exporting .tier-drop{
   backdrop-filter:none !important;
   background: var(--surface-raised) !important;
   border-color: var(--border) !important;
 }
+.exporting .tier-label{box-shadow:none!important}
 .exporting.desktop-capture .wrap{max-width:1200px;width:1200px}
 .exporting.desktop-capture .tier-row{grid-template-columns:180px 1fr !important}
 .exporting.desktop-capture .controls{grid-template-columns:repeat(4,minmax(0,1fr)) !important}
 
 /* ---------- Desktop inline-controls inside Image Storage ---------- */
 @media (min-width:1024px){
-  .controls-inline{display:flex; gap:10px; align-items:center; flex-wrap:nowrap}
+  .controls-inline{display:flex; gap:12px; align-items:center; flex-wrap:nowrap;
+    /* nudge toward center for balance across widths */
+    margin-left:clamp(40px, 9vw, 180px);
+  }
   .controls-inline .btn{height:44px; padding:0 14px; border-radius:14px; font-weight:800}
   .controls-inline .ico svg,.controls-inline .ico img{width:18px;height:18px}
   .controls-merged .controls-panel{ display:none !important; }
 
-  /* Title + buttons on one line, tighter spacing and left-aligned */
+  /* Title + buttons on one line; centered-ish balance */
   .section-bar{
     display:flex;
     align-items:center;
     justify-content:flex-start;
-    column-gap:10px;
+    column-gap:12px;
     row-gap:8px;
     margin-bottom:12px;
   }
