@@ -1,8 +1,5 @@
 /* =========================================================
-   Tier Maker — JS (M3 polish, bursty picker, hardened export)
-   - Icon system (Kalai Oval style) + auto-swap in DOM
-   - Mobile picker now “bursts” from tapped circle
-   - PNG export renders a 1200px board identically on all screens
+   Tier Maker — JS (compact picker, flat export, UI cleanup)
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -92,32 +89,28 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 var board=null, tray=null;
 
 /* =========================================================
-   ICONS: Kalai Oval-ish path set + helper
-   (If you want the exact SVGs from the collection, keep the
-   names and swap the path data 1-for-1.)
+   ICONS (Kalai Oval vibe) + swapper
 ========================================================= */
 var ICONS = {
-  add:        { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
-  menu:       { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
-  undo:       { vb:'0 0 24 24', d:'M7.1 7.9 4 11l3.1 3.1 1.4-1.4L7.8 12H13a5 5 0 1 1 0 10H6v-2h7a3 3 0 1 0 0-6H7.8l.7-.7-1.4-1.4z' },
-  trash:      { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
-  download:   { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
-  close:      { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
-  edit:       { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
+  add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
+  menu:     { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
+  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' },
+  trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
+  download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
+  close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
+  edit:     { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
 };
 function setIcon(container, name){
   if(!container) return;
   var spec = ICONS[name]; if(!spec) return;
   container.innerHTML = '<svg viewBox="'+spec.vb+'" aria-hidden="true"><path d="'+spec.d+'"/></svg>';
 }
-/* Swap icons found in the page */
 function swapAllIcons(){
   setIcon($('#addTierBtn .ico'),'add');
   setIcon($('#undoBtn .ico'),'undo');
   setIcon($('#trashClear .ico'),'trash');
   setIcon($('#saveBtn .ico'),'download');
   setIcon($('.title-pen'),'edit');
-  /* close icon for the radial picker */
   setIcon($('#radialPicker .radial-close'),'close');
 }
 
@@ -165,7 +158,7 @@ function buildRowDom(){
 
   var del=document.createElement('button'); del.className='row-del'; del.type='button';
   del.setAttribute('aria-label','Delete row');
-  setIcon(del, 'close'); // Kalai close
+  setIcon(del, 'close');
 
   labelWrap.appendChild(handle);
   labelWrap.appendChild(chip);
@@ -622,20 +615,19 @@ function enableRowReorder(handle, row){
   }
 }
 
-/* ---------- Radial picker (mobile): burst from circle ---------- */
+/* ---------- Radial picker (mobile): compact + edge guard ---------- */
 var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
 var _radialGeo = [];
 
-function rowCount(){ return $$('.tier-row').length; }
 function uniformCenter(cx, cy, R){
   var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* Easing spring helper */
+/* WAAPI spring */
 function springIn(el, delay){
   try{
     el.animate(
@@ -647,30 +639,6 @@ function springIn(el, delay){
       ],
       { duration: 420, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
     );
-  }catch(_){}
-}
-
-/* NEW: “explode” buttons outward from the tapped token center */
-function explodeFromCenter(btn, center, pos, j){
-  try{
-    var dx = pos.x - center.x, dy = pos.y - center.y;
-    btn.style.left = center.x+'px';
-    btn.style.top  = center.y+'px';
-    btn.animate(
-      [
-        { transform:'translate(-50%,-50%) scale(0.70)', opacity:0 },
-        { transform:'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px)) scale(1.10)', opacity:1, offset:.65 },
-        { transform:'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px)) scale(0.98)', opacity:1, offset:.85 },
-        { transform:'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px)) scale(1.00)', opacity:1 }
-      ],
-      { duration: 450, delay: j*24, easing:'cubic-bezier(.2,.8,.2,1)', fill:'both' }
-    );
-    // after animation, pin to final absolute position
-    setTimeout(function(){
-      btn.style.left = pos.x+'px';
-      btn.style.top  = pos.y+'px';
-      btn.style.transform = 'translate(-50%,-50%)';
-    }, 450 + j*24);
   }catch(_){}
 }
 
@@ -687,10 +655,17 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  var DOT=42, GAP=6, degStart=200, degEnd=340, stepDeg=(degEnd-degStart)/Math.max(1,(N-1)), stepRad=stepDeg*Math.PI/180;
-  var BASE_R=96, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.05)));
-  var R=Math.max(BASE_R, need);
+  // Compact fan + left-edge guard (no smoosh)
+  var DOT=42, GAP=6;
+  var degStart=210, degEnd=330;
+  var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
+  var stepRad=stepDeg*Math.PI/180;
+  var BASE_R=92, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.06)));
+  var R=Math.max(BASE_R, Math.min(110, need));
+  var EDGE=32;
+
   var center=uniformCenter(cx, cy, R);
+  if (center.x - R < EDGE) center.x = EDGE + R;
 
   var positions=[];
   for (var i=0;i<N;i++){
@@ -702,7 +677,6 @@ function openRadial(token){
 
   radialCloseBtn.style.left = center.x+'px';
   radialCloseBtn.style.top  = center.y+'px';
-  // close anim
   springIn(radialCloseBtn, 40);
 
   radialOpts.innerHTML = '';
@@ -712,6 +686,10 @@ function openRadial(token){
       var pos = positions[j];
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
+      btn.style.left = pos.x+'px';
+      btn.style.top  = pos.y+'px';
+      btn.style.transform = 'translate(-50%,-50%)';
+      btn.style.transitionDelay = (j*14)+'ms';
       var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
 
       on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
@@ -721,9 +699,7 @@ function openRadial(token){
 
       radialOpts.appendChild(btn);
       _radialGeo.push({row:row, btn:btn});
-
-      // explode from center to position
-      explodeFromCenter(btn, center, pos, j);
+      springIn(btn, j*24); // compact spring
     })(j);
   }
 
@@ -762,7 +738,7 @@ on($('#trashClear'),'click', function(){
   queueAutosave();
 });
 
-/* ---------- EXPORT: identical 1200px board on all screens ---------- */
+/* ---------- EXPORT: 1200px, flat color, title only if present ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -788,18 +764,13 @@ on($('#trashClear'),'click', function(){
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
 
-    // Clear interactive states
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     var panel = $('#boardPanel');
-    if(!panel){
-      alert('Could not find the board to export.'); return;
-    }
+    if(!panel){ alert('Could not find the board to export.'); return; }
 
     overlay.style.display='flex';
-
-    // lock the UI during export (prevents layout jank mid-clone)
     document.body.style.pointerEvents = 'none';
 
     html2canvas(panel, {
@@ -812,21 +783,18 @@ on($('#trashClear'),'click', function(){
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: 1300, // ensure desktop rules in clone
+      windowWidth: 1300,
       ignoreElements: function(el){
         if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src')||'')) return true;
         if (el.id === 'radialPicker') return true;
         return false;
       },
       onclone: function(doc){
-        // Mark entire document clone as exporting to hit CSS width rules
+        // mark whole clone as "desktop-capture" to pin width
         doc.documentElement.classList.add('exporting','desktop-capture');
 
         var wrap = doc.querySelector('.wrap');
-        if (wrap){
-          wrap.style.maxWidth='1200px';
-          wrap.style.width='1200px';
-        }
+        if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
 
         var clone = doc.querySelector('#'+panel.id);
         if (!clone) return;
@@ -834,7 +802,7 @@ on($('#trashClear'),'click', function(){
         // remove non-export bits inside the board
         clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
 
-        // hide editable placeholder title if empty
+        // hide placeholder title if empty (capture only when provided)
         var title = clone.querySelector('.board-title');
         if (title && title.textContent.replace(/\s+/g,'') === '') {
           var wrapTitle = title.closest('.board-title-wrap');
@@ -842,18 +810,19 @@ on($('#trashClear'),'click', function(){
           clone.classList.add('no-title');
         }
 
-        // freeze animations / transforms everywhere
+        // freeze everything, flatten tokens
         var reset = doc.createElement('style');
         reset.textContent = `
           .exporting *{ animation:none !important; transition:none !important; }
           .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
           .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
+          .exporting .token::after{ content:none !important; display:none !important; }  /* remove shimmer rim */
           .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
           .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
         `;
         doc.head.appendChild(reset);
 
-        // ensure CORS for same-origin imgs
+        // ensure CORS on same-origin images
         clone.querySelectorAll('img').forEach(function(img){
           var src = img.getAttribute('src')||'';
           if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
@@ -876,21 +845,8 @@ on($('#trashClear'),'click', function(){
   });
 })();
 
-/* ---------- Color picker preview ---------- */
-(function(){
-  var colorInput = $('#nameColor');
-  var preview = $('#colorPreview');
-  if (!preview) {
-    var addBtn = $('#addNameBtn');
-    preview=document.createElement('span'); preview.id='colorPreview';
-    preview.setAttribute('aria-hidden','true');
-    preview.style.cssText='display:inline-block;width:22px;height:22px;border-radius:50%;border:3px solid #111;margin-left:8px;vertical-align:middle;';
-    if(addBtn && addBtn.parentElement) addBtn.parentElement.insertBefore(preview, addBtn);
-  }
-  function updatePreview(){ var v=colorInput.value || '#dddddd'; preview.style.background=v; }
-  on(colorInput,'input', updatePreview);
-  on(document,'DOMContentLoaded', updatePreview);
-})();
+/* ---------- Color picker preview (removed on purpose) ---------- */
+(function(){ /* no visual preview bubble — we keep only the native swatch */ })();
 
 /* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
@@ -984,7 +940,9 @@ function setupDesktopControlsMerge(){
 document.addEventListener('DOMContentLoaded', function start(){
   board = $('#tierBoard'); tray = $('#tray');
 
-  swapAllIcons();           // <— unify iconography
+  swapAllIcons();
+
+  maybeClearAutosaveOnReload();
 
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
@@ -1011,7 +969,6 @@ document.addEventListener('DOMContentLoaded', function start(){
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
     colorInput.value = nextPreset();
-    var preview = $('#colorPreview'); if(preview) preview.style.background = colorInput.value;
     refitAllLabels(); queueAutosave();
   });
 
@@ -1024,16 +981,18 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
+  // Help content — clearer & line-by-line (with mobile tips)
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
     help.setAttribute('aria-live','polite');
-    help.innerHTML =
-      '<strong>Help</strong><br>' +
-      (isSmall()
-       ? 'Phone: tap a circle in Image Storage to choose a row. Once placed, drag to reorder or drag back to Image Storage.'
-       : 'Desktop/iPad: drag circles into rows. Reorder by dragging items or use Alt+Arrow keys. Drag the grip to reorder rows.') +
-      ' Click the tier label to edit it. Tap the small X on a tier label to delete that row (its items return to Image Storage).';
+    help.innerHTML = `
+      <strong>Help</strong>
+      <ul>
+        <li><b>Phone:</b> tap a circle in <i>Image Storage</i> to choose a row. Once placed, drag to reorder or drag back.</li>
+        <li><b>Desktop/iPad:</b> drag circles into rows. Use <kbd>Alt</kbd> + <kbd>←/→</kbd> to move within a row; <kbd>Alt</kbd> + <kbd>↑/↓</kbd> to move between rows.</li>
+        <li>Click a tier label to edit. Tap the small “X” on a tier to delete it (its items return to Image Storage).</li>
+      </ul>`;
   }
 
   enableClickToPlace(tray);
