@@ -1,3 +1,14 @@
+/* =========================================================
+   Tier Maker — CSS (polished)
+   - layered depth, gradient borders, glass accents
+   - mobile spacing + smaller tokens
+   - collapse animation for row deletion
+   - Add Tier / Save PNG bounce
+   - title spacing, export safety, desktop-capture
+   - subtle token shimmer (dragging)
+   - ambient gradient sweep on drop (desktop)
+========================================================= */
+
 /* ---------- Reset ---------- */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -10,15 +21,27 @@ body{
 img{max-width:100%;display:block}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 input,textarea{font:inherit;color:inherit}
-:focus-visible{outline:2px solid transparent;box-shadow:0 0 0 3px rgba(139,125,255,.45);border-radius:8px}
+:focus-visible{
+  outline:2px solid transparent;
+  box-shadow:0 0 0 3px rgba(139,125,255,.45);
+  border-radius:8px
+}
 a{color:inherit;text-decoration:none}
 
-/* ---------- Theme ---------- */
+/* ---------- Theme (base) ---------- */
 :root{
   --surface:#0f1115; --surface-raised:#171a22; --card:#11141c;
   --text:#e8eaf0; --muted:#a7b0c0; --border:rgba(255,255,255,.08);
   --shadow:0 10px 28px rgba(0,0,0,.35);
   --accent:#8b7dff; --brand:var(--neon); --neon:#d8ff3f;
+
+  /* extras for polish */
+  --elev-ambient: 0 10px 30px rgba(0,0,0,.28);
+  --elev-key: 0 2px 8px rgba(0,0,0,.35);
+  --radius-xl: 18px;
+  --radius-xxl: 22px;
+  --easing-out: cubic-bezier(.2,.8,.2,1);
+  --easing-in: cubic-bezier(.4,0,1,1);
 }
 :root[data-theme="light"]{
   --surface:#f7f8fb; --surface-raised:#fff; --card:#f0f3f8;
@@ -27,18 +50,61 @@ a{color:inherit;text-decoration:none}
   --accent:#6b5fff; --brand:#000; --neon:#c8ff45;
 }
 
-/* keep just in case (no-op now) */
+/* Prefer OKLCH + color-mix when available */
+@supports (color: oklch(50% 0.2 200)){
+  :root{
+    --surface: oklch(16% 0.012 260);
+    --surface-raised: oklch(20% 0.012 260);
+    --card: oklch(18% 0.012 260);
+    --text: oklch(96% 0.01 260);
+    --muted: oklch(70% 0.03 260);
+    --accent: oklch(70% 0.14 300);
+    --neon: oklch(92% 0.25 120);
+    --border: color-mix(in oklch, var(--text) 8%, transparent);
+  }
+  :root[data-theme="light"]{
+    --surface: oklch(98% 0.01 260);
+    --surface-raised: oklch(100% 0 0);
+    --card: oklch(96% 0.01 260);
+    --text: oklch(14% 0.02 260);
+    --muted: oklch(45% 0.03 260);
+    --border: color-mix(in oklch, var(--text) 8%, transparent);
+  }
+}
+
+/* keep legacy no-op (radial scroll lock) */
 body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 /* ---------- Layout ---------- */
-.wrap{max-width:1200px;margin:0 auto;padding:clamp(16px,2.4vw,28px);display:flex;flex-direction:column}
+.wrap{
+  max-width:1200px;margin:0 auto;padding:clamp(16px,2.4vw,28px);
+  display:flex;flex-direction:column;
+
+  /* tasteful grain & ambient */
+  background-image:
+    radial-gradient(1000px 500px at 10% -10%, rgba(255,255,255,.02), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(0,0,0,.12), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 2px, transparent 2px 4px);
+  background-blend-mode: soft-light, normal, normal;
+}
 .header{display:flex;align-items:center;gap:14px;margin-bottom:14px}
-.brand{font-weight:1000;letter-spacing:1px;color:var(--brand);font-size:clamp(31px,5.5vw,51px);position:sticky;top:14px;z-index:20}
+.brand{
+  font-weight:1000;letter-spacing:1px;color:var(--brand);
+  font-size:clamp(31px,5.5vw,51px);position:sticky;top:14px;z-index:20
+}
 @media (max-width:1024px){.brand{position:static}}
 
+/* ---------- Panels with gradient borders ---------- */
 .panel{
-  background:var(--surface-raised); border:1px solid var(--border);
-  border-radius:14px; box-shadow:var(--shadow);
+  background:
+    linear-gradient(var(--surface-raised), var(--surface-raised)) padding-box,
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(0,0,0,.18)) border-box;
+  border:1px solid transparent;
+  border-radius:var(--radius-xl);
+  box-shadow:
+    0 .5px 0 rgba(255,255,255,.08) inset,
+    0 -1px 0 rgba(0,0,0,.25) inset,
+    var(--elev-ambient), var(--elev-key);
   padding:clamp(14px,1.8vw,18px); margin-bottom:16px; overflow:visible;
 }
 .section-title{font-size:clamp(18px,2vw,24px);font-weight:900;margin:0 0 14px}
@@ -50,9 +116,10 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:10px;
-  height:56px;padding:0 18px;border-radius:16px;
+  height:56px;padding:0 18px;border-radius:var(--radius-xxl);
   background:var(--surface);color:var(--text);
-  border:1px solid var(--border);box-shadow:var(--shadow);
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 .5px 0 rgba(255,255,255,.12) inset, 0 10px 24px rgba(0,0,0,.25);
   transition:transform .08s ease,background .2s ease,border-color .2s ease,filter .2s ease;
 }
 .btn:hover{transform:translateY(-1px)}
@@ -60,11 +127,17 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .btn .ico{width:22px;height:22px;display:grid;place-items:center}
 .btn .ico svg{width:22px;height:22px;fill:currentColor}
 
-/* Unique tool-button colors */
-#addTierBtn{background:#02ec88;color:#111;border-color:rgba(0,0,0,.12)}
+/* Bounce on click */
+@keyframes btn-bounce{0%{transform:scale(1)}30%{transform:scale(1.08)}60%{transform:scale(0.98)}100%{transform:scale(1)}}
+.btn.bounce-anim{animation:btn-bounce .48s cubic-bezier(.34,1.56,.64,1)}
+
+#addTierBtn{
+  background:linear-gradient(180deg,#06f9a4,#02ec88);
+  color:#101213;border-color:rgba(0,0,0,.12)
+}
 #undoBtn{background:#ffcc3f;color:#111;border-color:rgba(0,0,0,.12)}
-#trashClear{background:#F05C58;color:#111;border-color:rgba(255,255,255,.18)}
-#saveBtn{background:#7901ff;color:#FFF;border-color:rgba(255,255,255,.15)}
+#trashClear{background:linear-gradient(180deg,#ff7a77,#f05c58);color:#111;border-color:rgba(255,255,255,.18)}
+#saveBtn{background:linear-gradient(180deg,#8a4dff,#6c23ff);color:#FFF;border-color:rgba(255,255,255,.15)}
 
 .btn.small{height:42px;padding:0 12px;border-radius:12px;font-weight:700}
 
@@ -77,25 +150,42 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .help strong{color:var(--accent)}
 
 /* ---------- Board ---------- */
-.board-title-wrap{display:flex;align-items:center;gap:8px;margin:0 0 16px} /* +6px spacing */
-.title-pen{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:transparent;border:0;margin-right:4px;opacity:.75}
+.board-title-wrap{
+  display:flex;align-items:center;gap:8px;margin:0 0 18px; /* +6px spacing */
+}
+.title-pen{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:8px;background:transparent;border:0;margin-right:4px;opacity:.75
+}
 .title-pen:hover{opacity:1}
 .title-pen svg{width:18px;height:18px;fill:currentColor;opacity:.9;display:block}
 
-.board-title{font-size:clamp(20px,2.2vw,28px);font-weight:900;margin:0}
+.board-title{
+  font-size:clamp(20px,2.2vw,28px);font-weight:900;margin:0;
+  letter-spacing:.2px;text-shadow:0 1px 0 rgba(0,0,0,.25);
+}
 .board-title[contenteditable]:empty::before{content:'Tier Board (optional title)';color:var(--muted)}
 .board-title[contenteditable="true"]{border-bottom:2px dashed rgba(139,125,255,.45);border-radius:0}
 .board-title[contenteditable="true"]:focus{outline:0; box-shadow:none;border-bottom:2px solid rgba(139,125,255,.85)}
 
-/* Hide edit UI during export; hide whole title row if empty */
 .exporting .title-pen{display:none!important}
 .exporting .board-title[contenteditable]{border:0!important}
 .exporting .board-title[contenteditable]:empty::before{content:''}
 .exporting.no-title .board-title-wrap{display:none!important}
 
+/* ---------- Tier board grid ---------- */
 #tierBoard{display:grid;gap:12px}
-.tier-row{display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch}
-@media (max-width:768px){.tier-row{grid-template-columns:140px 1fr}}
+.tier-row{
+  display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch;
+  transition:max-height .28s ease, opacity .24s ease, box-shadow .25s var(--easing-out), transform .25s var(--easing-out);
+  overflow:hidden;border-radius:var(--radius-xl);box-shadow:var(--elev-ambient);
+}
+.tier-row:hover{ box-shadow:0 16px 38px rgba(0,0,0,.40); transform:translateY(-1px); }
+.tier-row.removing{max-height:0!important;opacity:0}
+@media (max-width:768px){
+  #tierBoard{gap:16px}
+  .tier-row{grid-template-columns:140px 1fr}
+}
 
 /* --- TIER LABEL COLUMN --- */
 .tier-label{
@@ -112,15 +202,12 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
   font-weight:900;font-size:32px;line-height:1.15;
   text-transform:uppercase;letter-spacing:.5px;user-select:none;
   white-space:normal;text-align:center;
-  /* Give the text more breathing room so descenders never clip */
-  padding:10px 12px 12px;  /* << extra inner padding, no outer size change */
+  padding:10px 12px 12px; /* extra inner room to avoid clipping */
   overflow:hidden;word-break:break-word;hyphens:auto;overflow-wrap:break-word;
 }
-
-/* Reorder handle hidden; drag from label area is enabled via JS */
 .row-handle{display:none}
 
-/* Delete button stays absolute so text never shifts */
+/* delete button */
 .row-del{
   position:absolute;right:8px;bottom:8px;width:36px;height:36px;border-radius:9px;
   color:#fff;display:grid;place-items:center;
@@ -132,6 +219,7 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 
 /* Drops */
 .tier-drop{
+  position:relative; /* for overlays */
   background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
   padding:14px;display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
   align-content:start;gap:14px;min-height:calc(110px + 28px);
@@ -139,16 +227,45 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 }
 .tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
 .dropzone.drag-over{box-shadow:0 0 0 3px rgba(139,125,255,.35),var(--shadow)}
+@media (max-width:768px){
+  .tier-drop{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
+}
+
+/* Ambient gradient sweep when a token lands (desktop only) */
+@keyframes drop-sweep{from{background-position:-200% 0}to{background-position:200% 0}}
+@media (hover:hover){
+  .tier-drop::after{
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0;
+  }
+  /* Play when a freshly-dropped token has .animate-drop (added by JS) */
+  .tier-drop:has(.token.animate-drop)::after{
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+    background-size:200% 100%;
+    animation:drop-sweep .9s var(--easing-out);
+    opacity:1;
+  }
+}
 
 /* ---------- Tokens ---------- */
 .token{
   position:relative;width:110px;height:110px;border-radius:999px;background:#7da7ff;
   display:flex;align-items:center;justify-content:center;
-  user-select:none;cursor:pointer;transform:translateZ(0);transition:transform .08s ease;
+  user-select:none;cursor:pointer;transform:translateZ(0);transition:transform .18s var(--easing-out), box-shadow .18s var(--easing-out), filter .2s;
   will-change:transform;
+  border:1px solid rgba(255,255,255,.06);
+  box-shadow:
+    0 .5px 0 rgba(255,255,255,.25) inset,
+    0 -1px 8px rgba(0,0,0,.25) inset,
+    0 10px 24px rgba(0,0,0,.30), 0 2px 6px rgba(0,0,0,.22);
 }
-.token:hover{transform:translateY(-1px)}
-.token:active{transform:translateY(0)}
+.token::after{
+  /* subtle rim light */
+  content:""; position:absolute; inset:0; border-radius:999px;
+  background:radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,.35), transparent 60%);
+  pointer-events:none; mix-blend-mode:soft-light; opacity:.6;
+}
+.token:hover{transform:translateY(-2px) scale(1.015)}
+.token:active{transform:translateY(0) scale(.995)}
 .token:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
 .token .label{
   padding:0 14px;text-align:center;font-weight:900;font-size:18px;line-height:1;
@@ -158,9 +275,26 @@ body.radial-lock{ position:fixed; left:0; right:0; width:100%; }
 .token img{width:100%;height:100%;object-fit:cover;border-radius:999px;pointer-events:none}
 .token.selected{outline:3px solid var(--accent);outline-offset:4px}
 
-/* FLIP animation */
-.token.flip-anim{transition:transform 180ms ease}
-.drag-ghost{position:fixed;left:0;top:0;z-index:50;pointer-events:none;width:110px;height:110px;border-radius:999px;opacity:.92;transform:translate3d(0,0,0);will-change:transform}
+/* Smaller tokens on mobile for readability */
+@media (max-width:768px){
+  .token{width:96px;height:96px}
+}
+
+/* Drag feedback: stronger ghost shadow + scale via JS 'dragging-cue' */
+.dragging-cue{box-shadow:0 8px 20px rgba(0,0,0,.4)}
+
+/* Subtle token shimmer while dragging (ghost + any element with .dragging-cue) */
+@keyframes token-shimmer{to{transform:translateX(150%)}}
+.drag-ghost,
+.token.dragging-cue{position:fixed}
+.drag-ghost::before,
+.token.dragging-cue::before{
+  content:""; position:absolute; inset:-2px; border-radius:999px; pointer-events:none;
+  background:linear-gradient(130deg, transparent 0%, rgba(255,255,255,.18) 35%, rgba(255,255,255,.45) 48%, rgba(255,255,255,.18) 60%, transparent 100%);
+  transform:translateX(-150%); animation:token-shimmer 1s linear infinite; mix-blend-mode:screen;
+}
+.drag-ghost{left:0;top:0;z-index:50;pointer-events:none;width:110px;height:110px;border-radius:999px;opacity:.92;transform:translate3d(0,0,0);will-change:transform;filter:drop-shadow(0 18px 28px rgba(0,0,0,.45))}
+@media (max-width:768px){.drag-ghost{width:96px;height:96px}}
 .drag-hidden{opacity:.25}
 body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 @keyframes pop-in{from{transform:scale(.94)}to{transform:scale(1)}}
@@ -170,6 +304,9 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 #tray{
   background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
   padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:14px;
+}
+@media (max-width:768px){
+  #tray{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
 }
 
 /* ---------- A11y ---------- */
@@ -190,10 +327,21 @@ body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .radial-option.is-hot .dot{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.22);transform:scale(1.06)}
 .radial-close{position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:999px;border:1px solid var(--border);background:var(--surface-raised);color:var(--text);display:grid;place-items:center;box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .radial-close svg{width:22px;height:22px;fill:currentColor}
-:root[data-theme="light"] .radial-option .dot{background:#111;color:#fff;border-color:rgba(255,255,255,.45);box-shadow:0 2px 10px rgba(0,0,0,.35)}
-:root[data-theme="light"] .radial-close{background:#111;color:#fff;border-color:rgba(255,255,255,.45)}
 
-/* ---------- Export safety (no hover/transform shift) ---------- */
+/* Glassy enhancement for supported browsers */
+@supports (backdrop-filter: blur(8px)) {
+  .radial{backdrop-filter:blur(10px) saturate(1.1);background:color-mix(in oklch, var(--surface) 40%, transparent)}
+  .board-title-wrap{background:color-mix(in oklch, var(--surface-raised) 78%, transparent);backdrop-filter:blur(6px);padding:8px 10px;border-radius:12px}
+}
+:root[data-theme="light"] .radial-option .dot{
+  background:#111;color:#fff;border-color:rgba(255,255,255,.45);
+  box-shadow:0 2px 10px rgba(0,0,0,.35)
+}
+:root[data-theme="light"] .radial-close{
+  background:#111;color:#fff;border-color:rgba(255,255,255,.45)
+}
+
+/* ---------- Export safety ---------- */
 .exporting .token,
 .exporting .token:hover,
 .exporting .animate-drop,
