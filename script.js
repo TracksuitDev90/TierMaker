@@ -267,22 +267,22 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* Material 3 inspired, bold but readable (black text friendly) */
+/* Material 3 inspired — bolder expressive palette, black text friendly */
 var BASE_PALETTE = [
-  // yellows / ambers
-  '#FFE176','#FFD24A','#FFC94B','#FFF59D',
-  // oranges / corals
-  '#FFCC80','#FFB38A','#FF9E80','#FFAB91',
-  // reds / pinks
-  '#FFCDD2','#F8A8B9','#F48FB1','#FF8FA3',
-  // violets / purples
-  '#E1BEE7','#D1B5FF','#C7B7FF','#CE93D8',
-  // blues / teals
-  '#B3E5FC','#90CAF9','#A5E3F0','#9BE7FF',
-  // greens / mints
-  '#B2F2BB','#A5D6A7','#9AE6B4','#C6F6D5',
-  // limes
-  '#E6EE9C','#DCE775'
+  // Yellows / ambers
+  '#FFD600','#FFEA00','#FFE176','#FFC400',
+  // Oranges
+  '#FF9100','#FF6D00','#FFAB40','#FFB300',
+  // Reds / pinks
+  '#FF5252','#FF4081','#FF80AB','#F06292',
+  // Purples / violets
+  '#B388FF','#7C4DFF','#9575CD','#BA68C8',
+  // Blues / teals
+  '#40C4FF','#00B0FF','#0091EA','#26C6DA','#4DD0E1',
+  // Greens / mints
+  '#00E676','#1DE9B6','#69F0AE','#00C853','#A5D6A7',
+  // Limes
+  '#C6FF00','#AEEA00','#D4E157','#CDDC39'
 ];
 function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
 function ensureForBlack(hex){
