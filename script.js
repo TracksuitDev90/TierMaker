@@ -1,5 +1,6 @@
 /* =========================================================
    Tier Maker — JS (compact picker, flat export, UI cleanup)
+   + Full Reset on "Clear Board"
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -94,7 +95,7 @@ var board=null, tray=null;
 var ICONS = {
   add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
   menu:     { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
-  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' },
+  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' }, // stable path
   trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
   download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
   close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
@@ -267,7 +268,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* Material 3 inspired — bolder expressive palette, black text friendly */
+/* ---------- Palette (MD3-inspired — bolder expressive, black-text friendly) ---------- */
 var BASE_PALETTE = [
   // Yellows / ambers
   '#FFD600','#FFEA00','#FFE176','#FFC400',
@@ -724,7 +725,7 @@ function openRadial(token){
   radial._backdropHandler=backdrop;
 
   radial.classList.remove('hidden');
-  radial.classList.add('visible','show');
+  radial.classList.remove('show'); // ensure clean
   radial.setAttribute('aria-hidden','false');
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
@@ -732,18 +733,10 @@ function closeRadial(){
   if(!radial) return;
   if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden');
-  radial.classList.remove('visible','show');
   radial.setAttribute('aria-hidden','true');
   radialForToken = null; _radialGeo = [];
 }
 on(window,'resize', refreshRadialOptions);
-
-/* ---------- Clear ---------- */
-on($('#trashClear'),'click', function(){
-  if (!confirm('Clear the entire tier board? Items move back to Image Storage.')) return;
-  $$('.tier-drop .token').forEach(function(tok){ tray.appendChild(tok); });
-  queueAutosave();
-});
 
 /* ---------- EXPORT: 1200px, flat color, title only if present ---------- */
 (function(){
@@ -811,7 +804,7 @@ on($('#trashClear'),'click', function(){
 
         // hide placeholder title if empty (capture only when provided)
         var title = clone.querySelector('.board-title');
-       if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
+        if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
           var wrapTitle = title.closest('.board-title-wrap');
           if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
           clone.classList.add('no-title');
@@ -903,6 +896,49 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
+/* ---------- Full reset to original defaults ---------- */
+function resetToDefault(){
+  // Close mobile picker if it’s open
+  try { closeRadial(); } catch(_) {}
+
+  // Clear undo history
+  historyStack = [];
+  updateUndo();
+
+  // Nuke autosave
+  try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
+
+  // Clear board title (keeps placeholder)
+  var title = $('.board-title');
+  if (title) title.textContent = '';
+
+  // Rebuild default rows
+  var boardEl = $('#tierBoard');
+  if (boardEl){
+    boardEl.innerHTML = '';
+    tierIdx = 0;                              // reset tier color cycle
+    defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
+  }
+
+  // Re-seed the tray with the original name tokens (no images)
+  var trayEl = $('#tray');
+  if (trayEl){
+    trayEl.innerHTML = '';
+    pIndex = 0;                               // reset palette index
+    communityCast.forEach(function(n){
+      trayEl.appendChild(buildNameToken(n, nextPreset(), true));
+    });
+  }
+
+  // Tidy UI
+  $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+  $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
+
+  refitAllLabels();
+  refitAllChips();
+  announce('Everything reset to defaults.');
+}
+
 /* ---------- Desktop inline-controls merge ---------- */
 function setupDesktopControlsMerge(){
   var controls = $('.controls'); if(!controls) return;
@@ -948,7 +984,6 @@ document.addEventListener('DOMContentLoaded', function start(){
   board = $('#tierBoard'); tray = $('#tray');
 
   swapAllIcons();
-
   maybeClearAutosaveOnReload();
 
   var saved=null;
@@ -1002,6 +1037,7 @@ document.addEventListener('DOMContentLoaded', function start(){
       </ul>`;
   }
 
+  // Click-to-place also on tray
   enableClickToPlace(tray);
   announce('Ready.');
   updateUndo();
@@ -1009,4 +1045,11 @@ document.addEventListener('DOMContentLoaded', function start(){
   refitAllChips();
 
   setupDesktopControlsMerge();
+
+  /* ---------- Clear Board now = FULL RESET ---------- */
+  on($('#trashClear'),'click', function(){
+    var ok = confirm('Reset everything to the original state? This clears all circles, custom labels, uploaded items, and the title.');
+    if (!ok) return;
+    resetToDefault();
+  });
 });
