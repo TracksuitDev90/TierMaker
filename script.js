@@ -1,6 +1,12 @@
 /* =========================================================
-   Tier Maker — JS (compact picker, flat export, UI cleanup)
-   + Full Reset on "Clear Board"
+   Tier Maker — JS (final pass)
+   - Creator row alignment, brand buttons
+   - Device-specific help (no bullets)
+   - Pencil icon from external src (safe fallback)
+   - Flat tokens live; export-safe; controls above tray
+   - Title capture only when typed (not placeholder)
+   - Full reset on Clear Board
+   - Randomized token palette start each load
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -90,29 +96,45 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 var board=null, tray=null;
 
 /* =========================================================
-   ICONS (Kalai Oval vibe) + swapper
+   ICONS (Kalai-like) + external pencil
 ========================================================= */
 var ICONS = {
   add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
   menu:     { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
-  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' }, // stable path
+  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' },
   trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
   download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
-  close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
-  edit:     { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
+  close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' }
 };
+
 function setIcon(container, name){
   if(!container) return;
   var spec = ICONS[name]; if(!spec) return;
   container.innerHTML = '<svg viewBox="'+spec.vb+'" aria-hidden="true"><path d="'+spec.d+'"/></svg>';
 }
 function swapAllIcons(){
+  setIcon($('#addNameBtn .ico'),'add');
+  setIcon($('#fileBtn .ico'),'add');         // “Choose Files” uses plus icon for parity
   setIcon($('#addTierBtn .ico'),'add');
   setIcon($('#undoBtn .ico'),'undo');
   setIcon($('#trashClear .ico'),'trash');
   setIcon($('#saveBtn .ico'),'download');
-  setIcon($('.title-pen'),'edit');
   setIcon($('#radialPicker .radial-close'),'close');
+
+  // External pencil icon for title edit (fallback if it fails)
+  var pen = $('.title-pen');
+  if (pen){
+    var img = new Image();
+    img.alt = '';
+    img.decoding = 'async';
+    img.src = 'https://svgicons.com/static/icons/12453.svg'; // pencil-fill direct file path (common pattern)
+    img.onload = function(){ pen.innerHTML = ''; pen.appendChild(img); };
+    img.onerror = function(){
+      // fallback vector
+      pen.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z"/></svg>';
+    };
+    pen.appendChild(img);
+  }
 }
 
 /* ---------- FLIP helper ---------- */
@@ -172,9 +194,10 @@ function buildRowDom(){
   return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
 }
 function tintFrom(color){
-  var surface = cssVar('--surface') || '#111219';
-  var a=hexToRgb(surface), b=hexToRgb(color);
-  var amt = 0.14;
+  // mix a subtle hint toward mint for freshness
+  var base = cssVar('--mint') || '#B6F5E6';
+  var a=hexToRgb(base), b=hexToRgb(color);
+  var amt = 0.12;
   return rgbToHex(
     Math.round(a.r+(b.r-a.r)*amt),
     Math.round(a.g+(b.g-a.g)*amt),
@@ -233,7 +256,7 @@ function createRow(cfg){
   on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
 
   on(del,'click', function(){
-    var ok = confirm('Delete this row? Items in it will return to Image Storage.');
+    var ok = confirm('Delete this row? Items in it will return to the tray.');
     if(!ok) return;
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
@@ -261,41 +284,37 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names ---------- */
+/* ---------- Preset names (Keyon, Wobbles removed) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
-  "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
+  "Gavin","Harry","Jay","Jeremy","Katie","Kiev","Kikki","Kyle","Lewis","Meegan",
+  "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Xavier"
 ];
 
-/* ---------- Palette (MD3-inspired — bolder expressive, black-text friendly) ---------- */
+/* ---------- Palette (brand-aligned, black-text safe) ---------- */
 var BASE_PALETTE = [
-  // Yellows / ambers
-  '#FFD600','#FFEA00','#FFE176','#FFC400',
-  // Oranges
-  '#FF9100','#FF6D00','#FFAB40','#FFB300',
-  // Reds / pinks
-  '#FF5252','#FF4081','#FF80AB','#F06292',
-  // Purples / violets
-  '#B388FF','#7C4DFF','#9575CD','#BA68C8',
-  // Blues / teals
-  '#40C4FF','#00B0FF','#0091EA','#26C6DA','#4DD0E1',
-  // Greens / mints
-  '#00E676','#1DE9B6','#69F0AE','#00C853','#A5D6A7',
-  // Limes
-  '#C6FF00','#AEEA00','#D4E157','#CDDC39'
+  '#E2E540','#F0EC69','#D9E94F',
+  '#B6F5E6','#A9EFE0','#C8FFF1',
+  '#EEEDC9','#F7F4DC',
+  '#D1C0FF','#C7B5FF','#CEB8F8',
+  '#9BE7FF','#B3E5FC',
+  '#A5D6A7','#9AE6B4',
+  '#FFD24A','#FFE176'
 ];
 function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
 function ensureForBlack(hex){
   var target = 4.2, safe = hex, steps=0;
-  while (contrastForBlack(safe) < target && steps < 8){ safe = lighten(safe, 0.03); steps++; }
+  while (contrastForBlack(safe) < target && steps < 8){ safe = lighten(safe, 0.035); steps++; }
   var toned = mixHex(safe, hex, 0.20);
   var guard = 0;
   while (contrastForBlack(toned) < target && guard < 4){ toned = lighten(toned, 0.01); guard++; }
   return toned;
 }
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
-var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
+
+/* Randomize palette start so tokens rotate colors each load */
+var pIndex = Math.floor(Math.random() * presetPalette.length);
+function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
 /* ---------- Token label fitter ---------- */
 function fitLiveLabel(lbl){
@@ -436,7 +455,7 @@ on($('#undoBtn'),'click', function(){
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
       on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
       on(del,'click', function(){
-        if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
+        if(!confirm('Delete this row? Items in it will return to the tray.')) return;
         var tokens = $$('.token', drop);
         flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
         row.classList.add('removing');
@@ -497,8 +516,8 @@ function enablePointerDrag(node){
     originNext = node.nextElementSibling;
 
     var r=node.getBoundingClientRect(); offsetX=e.clientX-r.left; offsetY=e.clientY-r.top; x=e.clientX; y=e.clientY;
-    ghost = node.cloneNode(true); ghost.classList.add('drag-ghost','dragging-cue'); document.body.appendChild(ghost);
-    node.classList.add('drag-hidden','dragging-cue');
+    ghost = node.cloneNode(true); ghost.classList.add('drag-ghost'); document.body.appendChild(ghost);
+    node.classList.add('drag-hidden');
 
     function move(ev){ x=ev.clientX; y=ev.clientY; }
     function up(){
@@ -508,7 +527,7 @@ function enablePointerDrag(node){
       cancelAnimationFrame(raf);
       var target = document.elementFromPoint(x,y);
       if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
-      node.classList.remove('drag-hidden','dragging-cue');
+      node.classList.remove('drag-hidden');
       document.body.classList.remove('dragging-item');
 
       var zone = getDropZoneFromElement(target);
@@ -549,9 +568,9 @@ function enableMobileTouchDrag(node){
     if(!node.closest('.tier-drop'))return;
     e.preventDefault(); node.setPointerCapture(e.pointerId); document.body.classList.add('dragging-item');
 
-    var ghost=node.cloneNode(true); ghost.classList.add('drag-ghost','dragging-cue'); document.body.appendChild(ghost);
+    var ghost=node.cloneNode(true); ghost.classList.add('drag-ghost'); document.body.appendChild(ghost);
     var originNext=node.nextElementSibling;
-    node.classList.add('drag-hidden','dragging-cue');
+    node.classList.add('drag-hidden');
 
     var r=node.getBoundingClientRect(), offsetX=e.clientX-r.left, offsetY=e.clientY-r.top, x=e.clientX, y=e.clientY;
 
@@ -561,7 +580,7 @@ function enableMobileTouchDrag(node){
       document.removeEventListener('pointermove',move,_supportsPassive?{passive:true}:false);
       document.removeEventListener('pointerup',up,false);
       if(ghost&&ghost.parentNode)ghost.parentNode.removeChild(ghost);
-      node.classList.remove('drag-hidden','dragging-cue'); document.body.classList.remove('dragging-item');
+      node.classList.remove('drag-hidden'); document.body.classList.remove('dragging-item');
 
       var target=document.elementFromPoint(x,y); var zone=getDropZoneFromElement(target);
       if(zone){
@@ -628,14 +647,13 @@ var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
-var _radialGeo = [];
 
 function uniformCenter(cx, cy, R){
   var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* WAAPI spring */
+/* spring-like pop via WAAPI */
 function springIn(el, delay){
   try{
     el.animate(
@@ -663,7 +681,7 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  // Compact fan + left-edge guard (no smoosh)
+  // Compact fan + left-edge guard
   var DOT=42, GAP=6;
   var degStart=210, degEnd=330;
   var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
@@ -675,14 +693,6 @@ function openRadial(token){
   var center=uniformCenter(cx, cy, R);
   if (center.x - R < EDGE) center.x = EDGE + R;
 
-  var positions=[];
-  for (var i=0;i<N;i++){
-    var ang=(degStart+stepDeg*i)*Math.PI/180;
-    positions.push({ i:i, x:center.x+R*Math.cos(ang), y:center.y+R*Math.sin(ang) });
-  }
-  positions.sort(function(a,b){ return a.x - b.x; });
-  _radialGeo = [];
-
   radialCloseBtn.style.left = center.x+'px';
   radialCloseBtn.style.top  = center.y+'px';
   springIn(radialCloseBtn, 40);
@@ -691,13 +701,13 @@ function openRadial(token){
   for (let j=0;j<N;j++){
     (function(j){
       var row = rows[j];
-      var pos = positions[j];
+      var ang=(degStart+stepDeg*j)*Math.PI/180;
+      var x=center.x+R*Math.cos(ang), y=center.y+R*Math.sin(ang);
+
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
-      btn.style.left = pos.x+'px';
-      btn.style.top  = pos.y+'px';
-      btn.style.transform = 'translate(-50%,-50%)';
-      btn.style.transitionDelay = (j*14)+'ms';
+      btn.style.left = x+'px';
+      btn.style.top  = y+'px';
       var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
 
       on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
@@ -706,8 +716,7 @@ function openRadial(token){
       on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
 
       radialOpts.appendChild(btn);
-      _radialGeo.push({row:row, btn:btn});
-      springIn(btn, j*24); // compact spring
+      springIn(btn, j*24);
     })(j);
   }
 
@@ -725,7 +734,6 @@ function openRadial(token){
   radial._backdropHandler=backdrop;
 
   radial.classList.remove('hidden');
-  radial.classList.remove('show'); // ensure clean
   radial.setAttribute('aria-hidden','false');
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
@@ -734,11 +742,11 @@ function closeRadial(){
   if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden');
   radial.setAttribute('aria-hidden','true');
-  radialForToken = null; _radialGeo = [];
+  radialForToken = null;
 }
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- EXPORT: 1200px, flat color, title only if present ---------- */
+/* ---------- EXPORT: 1200px, flat color, title only if truly set ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -747,6 +755,14 @@ on(window,'resize', refreshRadialOptions);
       const u = new URL(url, location.href);
       return u.origin !== location.origin;
     }catch(_){ return false; }
+  }
+  function titleIsReal(node){
+    if(!node) return false;
+    var txt = (node.textContent||'').replace(/\s+/g,' ').trim();
+    if(!txt) return false;
+    // treat placeholder as "not real"
+    if (txt.toLowerCase() === 'tier board (optional title)') return false;
+    return true;
   }
 
   var overlay=document.createElement('div');
@@ -790,7 +806,7 @@ on(window,'resize', refreshRadialOptions);
         return false;
       },
       onclone: function(doc){
-        // mark whole clone as "desktop-capture" to pin width
+        // mark clone for capture
         doc.documentElement.classList.add('exporting','desktop-capture');
 
         var wrap = doc.querySelector('.wrap');
@@ -802,10 +818,10 @@ on(window,'resize', refreshRadialOptions);
         // remove non-export bits inside the board
         clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
 
-        // hide placeholder title if empty (capture only when provided)
+        // hide the title if empty OR still the placeholder
         var title = clone.querySelector('.board-title');
-        if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
-          var wrapTitle = title.closest('.board-title-wrap');
+        if (!titleIsReal(title)) {
+          var wrapTitle = clone.querySelector('.board-title-wrap');
           if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
           clone.classList.add('no-title');
         }
@@ -816,7 +832,7 @@ on(window,'resize', refreshRadialOptions);
           .exporting *{ animation:none !important; transition:none !important; }
           .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
           .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
-          .exporting .token::after{ content:none !important; display:none !important; }  /* remove shimmer rim */
+          .exporting .token::after{ content:none !important; display:none !important; }
           .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
           .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
         `;
@@ -845,13 +861,12 @@ on(window,'resize', refreshRadialOptions);
   });
 })();
 
-/* ---------- Color picker preview (removed on purpose) ---------- */
-(function(){ /* no visual preview bubble — we keep only the native swatch */ })();
-
 /* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
 function serializeState(){
-  var state={ rows:[], tray:[], version:1 };
+  var state={ rows:[], tray:[], title:'', version:2 };
+  var title = $('.board-title');
+  state.title = title ? title.textContent : '';
   $$('.tier-row').forEach(function(r){
     var chip=$('.label-chip',r), wrap=$('.tier-label',r);
     var color = (chip && chip.dataset.color) || (wrap && wrap.dataset.color) || '#8b7dff';
@@ -870,6 +885,9 @@ function serializeState(){
 }
 function restoreState(state){
   if(!state || !state.rows) return false;
+  if (state.title && state.title.toLowerCase() !== 'tier board (optional title)'){
+    var title = $('.board-title'); if (title) title.textContent = state.title;
+  }
   $('#tierBoard').innerHTML='';
   state.rows.forEach(function(r){
     var row=createRow({label:r.label, color:r.color});
@@ -896,87 +914,40 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
-/* ---------- Full reset to original defaults ---------- */
+/* ---------- Full reset to defaults ---------- */
 function resetToDefault(){
-  // Close mobile picker if it’s open
   try { closeRadial(); } catch(_) {}
 
-  // Clear undo history
   historyStack = [];
   updateUndo();
 
-  // Nuke autosave
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
 
-  // Clear board title (keeps placeholder)
-  var title = $('.board-title');
-  if (title) title.textContent = '';
+  var title = $('.board-title'); if (title) title.textContent = '';
 
-  // Rebuild default rows
   var boardEl = $('#tierBoard');
   if (boardEl){
     boardEl.innerHTML = '';
-    tierIdx = 0;                              // reset tier color cycle
+    tierIdx = 0;
     defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
   }
 
-  // Re-seed the tray with the original name tokens (no images)
   var trayEl = $('#tray');
   if (trayEl){
     trayEl.innerHTML = '';
-    pIndex = 0;                               // reset palette index
+    // rotate palette again on reset to keep colors fresh
+    pIndex = Math.floor(Math.random() * presetPalette.length);
     communityCast.forEach(function(n){
       trayEl.appendChild(buildNameToken(n, nextPreset(), true));
     });
   }
 
-  // Tidy UI
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
   refitAllLabels();
   refitAllChips();
   announce('Everything reset to defaults.');
-}
-
-/* ---------- Desktop inline-controls merge ---------- */
-function setupDesktopControlsMerge(){
-  var controls = $('.controls'); if(!controls) return;
-  var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
-  var trayPanel = $('#tray') ? $('#tray').closest('.panel') : null; if(!trayPanel) return;
-
-  var homeMarker = document.createElement('div'); homeMarker.id='controlsHome';
-  if (controlsPanel && !$('#controlsHome')) controlsPanel.insertBefore(homeMarker, controls);
-
-  var title = trayPanel.querySelector('.section-title');
-  var titleHome = document.createElement('div'); titleHome.id='titleHome';
-  if (title && !$('#titleHome')) title.parentNode.insertBefore(titleHome, title.nextSibling);
-
-  var sectionBar = document.createElement('div'); sectionBar.className='section-bar';
-  var inlineWrap = document.createElement('div'); inlineWrap.className='controls-inline';
-
-  function apply(){
-    if (isDesktopWide()){
-      if (!sectionBar.parentNode){ trayPanel.insertBefore(sectionBar, $('#tray')); }
-      if (title && title.parentNode !== sectionBar){ sectionBar.appendChild(title); }
-      if (!inlineWrap.parentNode){ sectionBar.appendChild(inlineWrap); }
-      if (controls.parentNode !== inlineWrap){ inlineWrap.appendChild(controls); }
-      document.body.classList.add('controls-merged');
-    } else {
-      if (titleHome && titleHome.parentNode && title && title.parentNode !== titleHome.parentNode){
-        titleHome.parentNode.insertBefore(title, titleHome);
-      }
-      if (homeMarker && homeMarker.parentNode && controls.parentNode !== homeMarker.parentNode){
-        homeMarker.parentNode.insertBefore(controls, homeMarker.nextSibling);
-      }
-      document.body.classList.remove('controls-merged');
-      if (inlineWrap.parentNode) inlineWrap.parentNode.removeChild(inlineWrap);
-      if (sectionBar.parentNode) sectionBar.parentNode.removeChild(sectionBar);
-    }
-  }
-
-  apply();
-  on(window,'resize', debounce(apply, 120));
 }
 
 /* ---------- Init ---------- */
@@ -986,6 +957,22 @@ document.addEventListener('DOMContentLoaded', function start(){
   swapAllIcons();
   maybeClearAutosaveOnReload();
 
+  // Creator: set initial color and hook file UI
+  var colorInput = $('#nameColor');
+  if (colorInput){ colorInput.value = nextPreset(); }
+
+  var fileInput = $('#imageInput');
+  var fileName  = $('#fileName');
+  if (fileInput && fileName){
+    on(fileInput,'change', function(e){
+      var n = e.target.files && e.target.files.length ? (
+        e.target.files.length === 1 ? e.target.files[0].name : (e.target.files.length + ' files selected')
+      ) : 'No files selected';
+      fileName.textContent = n;
+    });
+  }
+
+  // Load autosave or seed defaults
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
@@ -995,6 +982,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
+  // Controls
   on($('#addTierBtn'),'click', function(){
     this.classList.add('bounce-anim');
     once(this,'animationend',()=>this.classList.remove('bounce-anim'));
@@ -1014,7 +1002,7 @@ document.addEventListener('DOMContentLoaded', function start(){
     refitAllLabels(); queueAutosave();
   });
 
-  on($('#imageInput'),'change', function(e){
+  on(fileInput,'change', function(e){
     Array.prototype.forEach.call(e.target.files, function(file){
       if(!file.type || file.type.indexOf('image/')!==0) return;
       var reader = new FileReader();
@@ -1023,30 +1011,34 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help content — clearer & line-by-line (with mobile tips)
-  var help=$('#helpText') || $('.help');
+  // Device-specific help (no bullets)
+  var help=$('#helpText');
   if(help){
-    help.setAttribute('role','note');
-    help.setAttribute('aria-live','polite');
-    help.innerHTML = `
-      <strong>Help</strong>
-      <ul>
-        <li><b>Phone:</b> tap a circle in <i>Image Storage</i> to choose a row. Once placed, drag to reorder or drag back.</li>
-        <li><b>Desktop/iPad:</b> drag circles into rows. Use <kbd>Alt</kbd> + <kbd>←/→</kbd> to move within a row; <kbd>Alt</kbd> + <kbd>↑/↓</kbd> to move between rows.</li>
-        <li>Click a tier label to edit. Tap the small “X” on a tier to delete it (its items return to Image Storage).</li>
-      </ul>`;
+    if (isSmall()){
+      help.innerHTML = '<strong>Help</strong> — Tap a circle in the tray to choose a row. Drag to reorder, or drag back to the tray. Tap a tier label to rename. Use the “X” on a tier to delete it (items return to the tray).';
+    } else {
+      help.innerHTML = '<strong>Help</strong> — Drag circles into rows. Alt + ←/→ moves within a row; Alt + ↑/↓ moves between rows. Click a tier label to rename. Click the “X” on a tier to delete it (items return to the tray).';
+    }
   }
+  on(window,'resize', debounce(function(){
+    if(help){
+      if (isSmall()){
+        help.innerHTML = '<strong>Help</strong> — Tap a circle in the tray to choose a row. Drag to reorder, or drag back to the tray. Tap a tier label to rename. Use the “X” on a tier to delete it (items return to the tray).';
+      } else {
+        help.innerHTML = '<strong>Help</strong> — Drag circles into rows. Alt + ←/→ moves within a row; Alt + ↑/↓ moves between rows. Click a tier label to rename. Click the “X” on a tier to delete it (items return to the tray).';
+      }
+    }
+  }, 150));
 
   // Click-to-place also on tray
   enableClickToPlace(tray);
+
   announce('Ready.');
   updateUndo();
   refitAllLabels();
   refitAllChips();
 
-  setupDesktopControlsMerge();
-
-  /* ---------- Clear Board now = FULL RESET ---------- */
+  // Clear Board => full reset
   on($('#trashClear'),'click', function(){
     var ok = confirm('Reset everything to the original state? This clears all circles, custom labels, uploaded items, and the title.');
     if (!ok) return;
