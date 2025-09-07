@@ -1,6 +1,6 @@
 /* =========================================================
    Tier Maker — JS (compact picker, flat export, UI cleanup)
-   + Full Reset on "Clear Board"
+   + Final pass: pear parity, help text, pencil-fill, color rotation
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -53,7 +53,6 @@ var $$ = function (s, ctx){ return Array.prototype.slice.call((ctx||document).qu
 function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
-function isDesktopWide(){ return window.matchMedia && window.matchMedia('(min-width: 1024px)').matches; }
 function debounce(fn, ms){ var t; return function(){ clearTimeout(t); t=setTimeout(fn, ms); }; }
 
 /* ---------- Live region ---------- */
@@ -79,27 +78,24 @@ function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return 
 function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f)); }
 function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round(c.r+(255-c.r)*f), Math.round(c.g+(255-c.g)*f), Math.round(c.b+(255-c.b)*f)); }
 function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
-  return rgbToHex(
-    Math.round(a.r+(b.r-a.r)*t),
-    Math.round(a.g+(b.g-a.g)*t),
-    Math.round(a.b+(b.b-a.b)*t)
-  );
+  return rgbToHex(Math.round(a.r+(b.r-a.r)*t), Math.round(a.g+(b.g-a.g)*t), Math.round(a.b+(b.b-a.b)*t));
 }
 
 /* ---------- Globals ---------- */
 var board=null, tray=null;
 
 /* =========================================================
-   ICONS (Kalai Oval vibe) + swapper
+   ICONS (incl. requested pencil-fill)
 ========================================================= */
 var ICONS = {
   add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
   menu:     { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
-  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' }, // stable path
+  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' },
   trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
   download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
   close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
-  edit:     { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
+  /* Requested "pencil-fill" (Bootstrap Icons) */
+  edit:     { vb:'0 0 16 16', d:'M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z' } /* source: Bootstrap Icons pencil-fill */
 };
 function setIcon(container, name){
   if(!container) return;
@@ -111,7 +107,7 @@ function swapAllIcons(){
   setIcon($('#undoBtn .ico'),'undo');
   setIcon($('#trashClear .ico'),'trash');
   setIcon($('#saveBtn .ico'),'download');
-  setIcon($('.title-pen'),'edit');
+  setIcon($('.title-pen'),'edit');     // pencil-fill (requested)
   setIcon($('#radialPicker .radial-close'),'close');
 }
 
@@ -158,8 +154,7 @@ function buildRowDom(){
   chip.title='Click to edit label';
 
   var del=document.createElement('button'); del.className='row-del'; del.type='button';
-  del.setAttribute('aria-label','Delete row');
-  setIcon(del, 'close');
+  del.setAttribute('aria-label','Delete row'); setIcon(del, 'close');
 
   labelWrap.appendChild(handle);
   labelWrap.appendChild(chip);
@@ -187,25 +182,15 @@ function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; retu
 var CHIP_STEPS=[34,32,28,26,24,22,20,18,16,14];
 function fitChipText(chip){
   if(!chip) return;
-  chip.style.whiteSpace='normal';
-  chip.style.lineHeight='1.15';
-  chip.style.display='flex';
-  chip.style.alignItems='center';
-  chip.style.justifyContent='center';
-  chip.style.textAlign='center';
-  chip.style.overflow='hidden';
-
-  var wrap = chip.parentElement;
-  var padding = 16;
+  chip.style.whiteSpace='normal'; chip.style.lineHeight='1.15'; chip.style.display='flex';
+  chip.style.alignItems='center'; chip.style.justifyContent='center'; chip.style.textAlign='center'; chip.style.overflow='hidden';
+  var wrap = chip.parentElement, padding = 16;
   var maxW = wrap.clientWidth - padding; if (maxW < 40) maxW = wrap.clientWidth;
   var maxH = wrap.clientHeight - padding;
-
   for(var i=0;i<CHIP_STEPS.length;i++){
     var px = CHIP_STEPS[i];
     chip.style.fontSize = px+'px';
-    if (chip.scrollWidth <= maxW && chip.scrollHeight <= Math.max(maxH, 110)){
-      break;
-    }
+    if (chip.scrollWidth <= maxW && chip.scrollHeight <= Math.max(maxH, 110)){ break; }
   }
 }
 
@@ -233,7 +218,7 @@ function createRow(cfg){
   on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
 
   on(del,'click', function(){
-    var ok = confirm('Delete this row? Items in it will return to Image Storage.');
+    var ok = confirm('Delete this row? Items in it will return to storage.');
     if(!ok) return;
     var tokens = $$('.token', drop);
     flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
@@ -261,28 +246,20 @@ var defaultTiers = [
 var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names ---------- */
+/* ---------- Preset names (removed "Keyon") ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Keyon","Kiev","Kikki","Kyle","Lewis","Meegan",
+  "Gavin","Harry","Jay","Jeremy","Katie","Kiev","Kikki","Kyle","Lewis","Meegan",
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Wobbles","Xavier"
 ];
 
-/* ---------- Palette (MD3-inspired — bolder expressive, black-text friendly) ---------- */
+/* ---------- Palette (MD3-ish); label text stays black ---------- */
 var BASE_PALETTE = [
-  // Yellows / ambers
   '#FFD600','#FFEA00','#FFE176','#FFC400',
-  // Oranges
-  '#FF9100','#FF6D00','#FFAB40','#FFB300',
-  // Reds / pinks
   '#FF5252','#FF4081','#FF80AB','#F06292',
-  // Purples / violets
   '#B388FF','#7C4DFF','#9575CD','#BA68C8',
-  // Blues / teals
   '#40C4FF','#00B0FF','#0091EA','#26C6DA','#4DD0E1',
-  // Greens / mints
   '#00E676','#1DE9B6','#69F0AE','#00C853','#A5D6A7',
-  // Limes
   '#C6FF00','#AEEA00','#D4E157','#CDDC39'
 ];
 function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
@@ -300,13 +277,9 @@ var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.
 /* ---------- Token label fitter ---------- */
 function fitLiveLabel(lbl){
   if (!lbl) return;
-  var token = lbl.parentElement;
-  var D = token.clientWidth;
-  var pad = 10;
-  var s = lbl.style;
+  var token = lbl.parentElement, D = token.clientWidth, pad = 10, s = lbl.style;
   s.whiteSpace='nowrap'; s.lineHeight='1'; s.display='flex';
-  s.alignItems='center'; s.justifyContent='center';
-  s.height='100%'; s.padding='0 '+pad+'px';
+  s.alignItems='center'; s.justifyContent='center'; s.height='100%'; s.padding='0 '+pad+'px';
   s.wordBreak='normal'; s.hyphens='none'; s.overflow='hidden';
   var lo=Math.max(12,Math.floor(D*0.2)), hi=Math.floor(D*0.44), best=lo;
   function fits(px){ s.fontSize=px+'px'; return (lbl.scrollWidth<=D-pad*2) && (lbl.scrollHeight<=D-pad*2); }
@@ -436,7 +409,7 @@ on($('#undoBtn'),'click', function(){
       on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
       on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
       on(del,'click', function(){
-        if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
+        if(!confirm('Delete this row? Items in it will return to storage.')) return;
         var tokens = $$('.token', drop);
         flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
         row.classList.add('removing');
@@ -628,7 +601,6 @@ var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
-var _radialGeo = [];
 
 function uniformCenter(cx, cy, R){
   var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
@@ -663,9 +635,8 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  // Compact fan + left-edge guard (no smoosh)
-  var DOT=42, GAP=6;
-  var degStart=210, degEnd=330;
+  // Compact fan + left-edge guard
+  var DOT=42, GAP=6, degStart=210, degEnd=330;
   var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
   var stepRad=stepDeg*Math.PI/180;
   var BASE_R=92, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.06)));
@@ -675,14 +646,6 @@ function openRadial(token){
   var center=uniformCenter(cx, cy, R);
   if (center.x - R < EDGE) center.x = EDGE + R;
 
-  var positions=[];
-  for (var i=0;i<N;i++){
-    var ang=(degStart+stepDeg*i)*Math.PI/180;
-    positions.push({ i:i, x:center.x+R*Math.cos(ang), y:center.y+R*Math.sin(ang) });
-  }
-  positions.sort(function(a,b){ return a.x - b.x; });
-  _radialGeo = [];
-
   radialCloseBtn.style.left = center.x+'px';
   radialCloseBtn.style.top  = center.y+'px';
   springIn(radialCloseBtn, 40);
@@ -691,13 +654,12 @@ function openRadial(token){
   for (let j=0;j<N;j++){
     (function(j){
       var row = rows[j];
-      var pos = positions[j];
+      var ang=(degStart+stepDeg*j)*Math.PI/180;
+      var x=center.x+R*Math.cos(ang), y=center.y+R*Math.sin(ang);
+
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
-      btn.style.left = pos.x+'px';
-      btn.style.top  = pos.y+'px';
-      btn.style.transform = 'translate(-50%,-50%)';
-      btn.style.transitionDelay = (j*14)+'ms';
+      btn.style.left = x+'px'; btn.style.top = y+'px';
       var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
 
       on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
@@ -706,8 +668,7 @@ function openRadial(token){
       on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
 
       radialOpts.appendChild(btn);
-      _radialGeo.push({row:row, btn:btn});
-      springIn(btn, j*24); // compact spring
+      springIn(btn, j*24);
     })(j);
   }
 
@@ -725,7 +686,6 @@ function openRadial(token){
   radial._backdropHandler=backdrop;
 
   radial.classList.remove('hidden');
-  radial.classList.remove('show'); // ensure clean
   radial.setAttribute('aria-hidden','false');
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
@@ -734,11 +694,11 @@ function closeRadial(){
   if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden');
   radial.setAttribute('aria-hidden','true');
-  radialForToken = null; _radialGeo = [];
+  radialForToken = null;
 }
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- EXPORT: 1200px, flat color, title only if present ---------- */
+/* ---------- EXPORT: 1200px, flat color, title only if actually typed ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -776,21 +736,15 @@ on(window,'resize', refreshRadialOptions);
     html2canvas(panel, {
       backgroundColor: cssVar('--surface') || '#0f1115',
       scale: Math.min(2, window.devicePixelRatio || 1.5),
-      useCORS: true,
-      allowTaint: false,
-      imageTimeout: 15000,
-      foreignObjectRendering: false,
-      logging: false,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 1300,
+      useCORS: true, allowTaint: false, imageTimeout: 15000,
+      foreignObjectRendering: false, logging: false,
+      scrollX: 0, scrollY: 0, windowWidth: 1300,
       ignoreElements: function(el){
         if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src')||'')) return true;
         if (el.id === 'radialPicker') return true;
         return false;
       },
       onclone: function(doc){
-        // mark whole clone as "desktop-capture" to pin width
         doc.documentElement.classList.add('exporting','desktop-capture');
 
         var wrap = doc.querySelector('.wrap');
@@ -799,10 +753,9 @@ on(window,'resize', refreshRadialOptions);
         var clone = doc.querySelector('#'+panel.id);
         if (!clone) return;
 
-        // remove non-export bits inside the board
         clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
 
-        // hide placeholder title if empty (capture only when provided)
+        // Only capture title if user typed real text (not the placeholder)
         var title = clone.querySelector('.board-title');
         if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
           var wrapTitle = title.closest('.board-title-wrap');
@@ -810,24 +763,20 @@ on(window,'resize', refreshRadialOptions);
           clone.classList.add('no-title');
         }
 
-        // freeze everything, flatten tokens
         var reset = doc.createElement('style');
         reset.textContent = `
           .exporting *{ animation:none !important; transition:none !important; }
           .exporting .panel, .exporting .tier-drop{ backdrop-filter:none !important; filter:none !important; }
           .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
-          .exporting .token::after{ content:none !important; display:none !important; }  /* remove shimmer rim */
+          .exporting .token::after{ content:none !important; display:none !important; }
           .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
           .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
         `;
         doc.head.appendChild(reset);
 
-        // ensure CORS on same-origin images
         clone.querySelectorAll('img').forEach(function(img){
           var src = img.getAttribute('src')||'';
-          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
-            img.setAttribute('crossorigin','anonymous');
-          }
+          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) { img.setAttribute('crossorigin','anonymous'); }
         });
       }
     }).then(function(canvas){
@@ -844,9 +793,6 @@ on(window,'resize', refreshRadialOptions);
     });
   });
 })();
-
-/* ---------- Color picker preview (removed on purpose) ---------- */
-(function(){ /* no visual preview bubble — we keep only the native swatch */ })();
 
 /* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
@@ -898,85 +844,31 @@ function maybeClearAutosaveOnReload(){
 
 /* ---------- Full reset to original defaults ---------- */
 function resetToDefault(){
-  // Close mobile picker if it’s open
   try { closeRadial(); } catch(_) {}
-
-  // Clear undo history
-  historyStack = [];
-  updateUndo();
-
-  // Nuke autosave
+  historyStack = []; updateUndo();
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
+  var title = $('.board-title'); if (title) title.textContent = '';
 
-  // Clear board title (keeps placeholder)
-  var title = $('.board-title');
-  if (title) title.textContent = '';
-
-  // Rebuild default rows
   var boardEl = $('#tierBoard');
   if (boardEl){
     boardEl.innerHTML = '';
-    tierIdx = 0;                              // reset tier color cycle
+    tierIdx = 0;
     defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
   }
 
-  // Re-seed the tray with the original name tokens (no images)
   var trayEl = $('#tray');
   if (trayEl){
     trayEl.innerHTML = '';
-    pIndex = 0;                               // reset palette index
-    communityCast.forEach(function(n){
-      trayEl.appendChild(buildNameToken(n, nextPreset(), true));
-    });
+    // rotate palette start so names get new colors on every reset too
+    pIndex = Math.floor(Math.random() * presetPalette.length);
+    communityCast.forEach(function(n){ trayEl.appendChild(buildNameToken(n, nextPreset(), true)); });
   }
 
-  // Tidy UI
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
-  refitAllLabels();
-  refitAllChips();
+  refitAllLabels(); refitAllChips();
   announce('Everything reset to defaults.');
-}
-
-/* ---------- Desktop inline-controls merge ---------- */
-function setupDesktopControlsMerge(){
-  var controls = $('.controls'); if(!controls) return;
-  var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
-  var trayPanel = $('#tray') ? $('#tray').closest('.panel') : null; if(!trayPanel) return;
-
-  var homeMarker = document.createElement('div'); homeMarker.id='controlsHome';
-  if (controlsPanel && !$('#controlsHome')) controlsPanel.insertBefore(homeMarker, controls);
-
-  var title = trayPanel.querySelector('.section-title');
-  var titleHome = document.createElement('div'); titleHome.id='titleHome';
-  if (title && !$('#titleHome')) title.parentNode.insertBefore(titleHome, title.nextSibling);
-
-  var sectionBar = document.createElement('div'); sectionBar.className='section-bar';
-  var inlineWrap = document.createElement('div'); inlineWrap.className='controls-inline';
-
-  function apply(){
-    if (isDesktopWide()){
-      if (!sectionBar.parentNode){ trayPanel.insertBefore(sectionBar, $('#tray')); }
-      if (title && title.parentNode !== sectionBar){ sectionBar.appendChild(title); }
-      if (!inlineWrap.parentNode){ sectionBar.appendChild(inlineWrap); }
-      if (controls.parentNode !== inlineWrap){ inlineWrap.appendChild(controls); }
-      document.body.classList.add('controls-merged');
-    } else {
-      if (titleHome && titleHome.parentNode && title && title.parentNode !== titleHome.parentNode){
-        titleHome.parentNode.insertBefore(title, titleHome);
-      }
-      if (homeMarker && homeMarker.parentNode && controls.parentNode !== homeMarker.parentNode){
-        homeMarker.parentNode.insertBefore(controls, homeMarker.nextSibling);
-      }
-      document.body.classList.remove('controls-merged');
-      if (inlineWrap.parentNode) inlineWrap.parentNode.removeChild(inlineWrap);
-      if (sectionBar.parentNode) sectionBar.parentNode.removeChild(sectionBar);
-    }
-  }
-
-  apply();
-  on(window,'resize', debounce(apply, 120));
 }
 
 /* ---------- Init ---------- */
@@ -986,10 +878,13 @@ document.addEventListener('DOMContentLoaded', function start(){
   swapAllIcons();
   maybeClearAutosaveOnReload();
 
+  // Rotate color start each load so nobody is stuck with the same color
+  pIndex = Math.floor(Math.random() * presetPalette.length);
+
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
-    announce('Restored your last session.'); 
+    announce('Restored your last session.');
   } else {
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
@@ -1010,6 +905,8 @@ document.addEventListener('DOMContentLoaded', function start(){
     var chosen = colorInput.value;
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
+    // don’t advance to a random color here—respect user-chosen picker;
+    // but rotate the palette preview for convenience:
     colorInput.value = nextPreset();
     refitAllLabels(); queueAutosave();
   });
@@ -1023,18 +920,18 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help content — clearer & line-by-line (with mobile tips)
+  // Help: no bullets; device-specific copy
   var help=$('#helpText') || $('.help');
   if(help){
     help.setAttribute('role','note');
     help.setAttribute('aria-live','polite');
-    help.innerHTML = `
-      <strong>Help</strong>
-      <ul>
-        <li><b>Phone:</b> tap a circle in <i>Image Storage</i> to choose a row. Once placed, drag to reorder or drag back.</li>
-        <li><b>Desktop/iPad:</b> drag circles into rows. Use <kbd>Alt</kbd> + <kbd>←/→</kbd> to move within a row; <kbd>Alt</kbd> + <kbd>↑/↓</kbd> to move between rows.</li>
-        <li>Click a tier label to edit. Tap the small “X” on a tier to delete it (its items return to Image Storage).</li>
-      </ul>`;
+    help.innerHTML =
+      '<strong>Help</strong>' +
+      '<p>' +
+      (isSmall()
+        ? 'Phone: tap a circle in storage to choose a row. Once placed, drag to reorder or drag back to storage.'
+        : 'Desktop/iPad: drag circles into rows. Alt+←/→ moves within a row; Alt+↑/↓ moves to another row. Drag the grip to reorder rows.') +
+      '</p>';
   }
 
   // Click-to-place also on tray
@@ -1044,11 +941,9 @@ document.addEventListener('DOMContentLoaded', function start(){
   refitAllLabels();
   refitAllChips();
 
-  setupDesktopControlsMerge();
-
-  /* ---------- Clear Board now = FULL RESET ---------- */
+  // Clear Board = full reset
   on($('#trashClear'),'click', function(){
-    var ok = confirm('Reset everything to the original state? This clears all circles, custom labels, uploaded items, and the title.');
+    var ok = confirm('Reset everything to the original state? This clears circles, labels, uploads, and the title.');
     if (!ok) return;
     resetToDefault();
   });
