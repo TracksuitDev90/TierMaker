@@ -1,3 +1,5 @@
+HTML
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -18,71 +20,76 @@
     <section class="panel creator-grid" aria-labelledby="createTitle">
       <h2 id="createTitle" class="section-title">Create custom items</h2>
 
-      <!-- Row: name + color + add -->
-      <div class="creator-line creator-line-top">
+      <div class="creator-line">
         <label class="sr" for="nameInput">Name circle</label>
-        <input id="nameInput" class="input name-input" type="text" placeholder="Type a name..." autocomplete="off" />
+        <input id="nameInput" class="input" type="text" placeholder="Type a name..." autocomplete="off" />
         <input id="nameColor" class="color-dot" type="color" title="Circle color" />
-        <button id="addNameBtn" class="btn btn-brand" type="button">
-          <span class="ico" aria-hidden="true"></span>
-          <span class="btn-text">Add</span>
+        <button id="addNameBtn" class="btn" type="button">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+          </span>
+          <span>Add</span>
         </button>
       </div>
 
-      <!-- Row: choose files -->
-      <div class="creator-line creator-line-files">
-        <input id="imageInput" type="file" accept="image/*" multiple class="sr" />
-        <label for="imageInput" id="fileBtn" class="btn btn-brand file-btn" role="button" aria-controls="imageInput">
-          <span class="ico" aria-hidden="true"></span>
-          <span>Choose Files</span>
-        </label>
-        <span id="fileName" class="file-name" aria-live="polite">No files selected</span>
+      <div class="creator-line">
+        <label class="sr" for="imageInput">Upload images</label>
+        <input id="imageInput" type="file" accept="image/*" multiple />
       </div>
 
-      <!-- Help -->
-      <p class="help" id="helpText" role="note" aria-live="polite"></p>
+      <p class="help">
+        <span id="helpText">Desktop/iPad: drag circles into rows. Phone: tap a circle to choose a row.</span>
+      </p>
     </section>
 
     <!-- Tier board -->
     <section class="panel" id="boardPanel" aria-label="Tier board">
       <div class="board-title-wrap">
-        <button class="title-pen" type="button" aria-hidden="true">
-          <!-- Will be set to external pencil icon via JS; safe fallback included there -->
-        </button>
+        <span class="title-pen" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0L14.13 4.7l3.75 3.75 2.83-1.41z"/></svg>
+        </span>
         <h2 class="board-title" contenteditable="true" spellcheck="false"></h2>
       </div>
+
       <div id="tierBoard" aria-live="off"></div>
     </section>
 
-    <!-- Controls moved above tray (no "Image Storage" heading) -->
+    <!-- Controls (moved below the board) -->
     <section class="panel" aria-label="Board Controls">
-      <div class="section-bar">
-        <div class="controls controls-desktop-row">
-          <button id="addTierBtn" class="btn btn-brand" type="button">
-            <span class="ico" aria-hidden="true"></span>
-            <span>Add Tier</span>
-          </button>
+      <div class="controls">
+        <button id="addTierBtn" class="btn" type="button">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M3 7h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+          </span>
+          <span>Add Tier</span>
+        </button>
 
-          <button id="undoBtn" class="btn" type="button" disabled>
-            <span class="ico" aria-hidden="true"></span>
-            <span>Undo</span>
-          </button>
+        <button id="undoBtn" class="btn" type="button" disabled>
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 01-10 10H6v-2h6a8 8 0 000-16z"/></svg>
+          </span>
+          <span>Undo</span>
+        </button>
 
-          <button id="trashClear" class="btn" type="button">
-            <span class="ico" aria-hidden="true"></span>
-            <span>Clear Board</span>
-          </button>
+        <button id="trashClear" class="btn" type="button">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M9 3h6l1 2h5v2H3V5h5l1-2zm1 6h2v10h-2V9zm4 0h2v10h-2V9z"/></svg>
+          </span>
+          <span>Clear Board</span>
+        </button>
 
-          <button id="saveBtn" class="btn" type="button">
-            <span class="ico" aria-hidden="true"></span>
-            <span>Save PNG</span>
-          </button>
-        </div>
+        <button id="saveBtn" class="btn" type="button">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6h-4V8H7l5-5zm-7 14h14v2H5v-2z"/></svg>
+          </span>
+          <span>Save PNG</span>
+        </button>
       </div>
     </section>
 
-    <!-- Items tray (no title text) -->
+    <!-- Items tray -->
     <section class="panel">
+      <h2 class="section-title">Image Storage</h2>
       <div id="tray"></div>
     </section>
 
@@ -90,7 +97,9 @@
     <div id="radialPicker" class="radial hidden" aria-hidden="true">
       <div class="radial-options"></div>
       <div class="radial-highlight" hidden></div>
-      <button class="radial-close" type="button" aria-label="Close"></button>
+      <button class="radial-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M18.3 5.71L12 12.01l-6.29-6.3-1.41 1.42L10.59 13.4l-6.3 6.3 1.42 1.41 6.29-6.29 6.29 6.29 1.41-1.41-6.3-6.3 6.3-6.29-1.41-1.42z"/></svg>
+      </button>
     </div>
 
     <!-- A11y live region -->
