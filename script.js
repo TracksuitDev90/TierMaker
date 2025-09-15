@@ -1,8 +1,7 @@
 /* =========================================================
    Tier Maker — JS (compact picker, flat export, UI cleanup)
    + Full Reset on "Clear Board"
-   + Export fix (keep row styles; hide blank/default title)
-   + Radial dots match tier color & open reliably
+   + Robust Export (fallback) + Color-coded radial dots
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -270,7 +269,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Xavier"
 ];
 
-/* ---------- Palette (MD3-inspired — black-text friendly) ---------- */
+/* ---------- Palette (MD3-inspired — bolder expressive, black-text friendly) ---------- */
 var BASE_PALETTE = [
   '#FFD600','#FFEA00','#FFE176','#FFC400',
   '#FF9100','#FF6D00','#FFAB40','#FFB300',
@@ -361,19 +360,6 @@ function buildTokenBase(){
       closeRadial();
     }
   });
-
-  // EXTRA: ensure picker opens on first quick tap on some mobile browsers
-  on(el,'pointerup', function(ev){
-    if (!isSmall()) return;
-    var inTray = !!el.closest('#tray');
-    var picker = $('#radialPicker');
-    if (inTray && picker && picker.classList.contains('hidden')) {
-      $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
-      el.classList.add('selected');
-      openRadial(el);
-    }
-  }, _supportsPassive?{passive:true}:false);
-
   return el;
 }
 function buildNameToken(name, color, forceBlack){
@@ -631,7 +617,7 @@ function enableRowReorder(handle, row){
   }
 }
 
-/* ---------- Radial picker (mobile): compact + edge guard + COLOR MATCH ---------- */
+/* ---------- Radial picker (mobile): compact + edge guard + color-coded dots ---------- */
 var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
@@ -642,6 +628,21 @@ function uniformCenter(cx, cy, R){
   var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
+
+/* WAAPI spring */
+function springIn(el, delay){
+  try{
+    el.animate(
+      [
+        { transform: 'translate(-50%,-50%) scale(0.72)', opacity: 0 },
+        { transform: 'translate(-50%,-50%) scale(1.08)', opacity: 1, offset: .58 },
+        { transform: 'translate(-50%,-50%) scale(0.96)', opacity: 1, offset: .82 },
+        { transform: 'translate(-50%,-50%) scale(1.00)', opacity: 1 }
+      ],
+      { duration: 420, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
+    );
+  }catch(_){}
+}
 
 function openRadial(token){
   if(!radial||!isSmall()) return;
@@ -678,31 +679,30 @@ function openRadial(token){
 
   radialCloseBtn.style.left = center.x+'px';
   radialCloseBtn.style.top  = center.y+'px';
+  springIn(radialCloseBtn, 40);
 
   radialOpts.innerHTML = '';
   for (let j=0;j<N;j++){
     (function(j){
       var row = rows[j];
       var pos = positions[j];
-
-      // Pull the tier color directly from its label
-      var labelWrap = row.querySelector('.tier-label');
-      var tierColor = (labelWrap && (labelWrap.dataset.color || labelWrap.style.background)) || '#ffffff';
-      var textColor = contrastColor(tierColor);
-
       var btn = document.createElement('button');
-      btn.type='button';
-      btn.className='radial-option';
+      btn.type='button'; btn.className='radial-option';
       btn.style.left = pos.x+'px';
       btn.style.top  = pos.y+'px';
       btn.style.transform = 'translate(-50%,-50%)';
       btn.style.transitionDelay = (j*14)+'ms';
 
-      var dot=document.createElement('span');
-      dot.className='dot';
-      dot.textContent=labels[j];        // S / A / B / C / D / …
-      dot.style.background = tierColor;  // match tier label color
-      dot.style.color = textColor;
+      var dot=document.createElement('span'); dot.className='dot';
+      dot.textContent=labels[j];
+
+      // NEW: color-code to tier label color
+      var labelWrap = row.querySelector('.tier-label');
+      var rowColor = (labelWrap && (labelWrap.dataset.color || labelWrap.style.background)) || '#ffffff';
+      dot.style.background = rowColor;
+      dot.style.color = contrastColor(rowColor);
+      dot.style.borderColor = 'rgba(0,0,0,.10)';
+
       btn.appendChild(dot);
 
       on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
@@ -712,16 +712,9 @@ function openRadial(token){
 
       radialOpts.appendChild(btn);
       _radialGeo.push({row:row, btn:btn});
-      try{ btn.animate([{ transform:'translate(-50%,-50%) scale(.72)', opacity:0 },
-                        { transform:'translate(-50%,-50%) scale(1.00)', opacity:1 }],
-                        { duration:320, easing:'cubic-bezier(.2,.8,.2,1)', fill:'both', delay:j*24 }); }catch(_){}
+      springIn(btn, j*24);
     })(j);
   }
-
-  // spring-in for close
-  try{ radialCloseBtn.animate([{ transform:'translate(-50%,-50%) scale(.72)', opacity:0 },
-                               { transform:'translate(-50%,-50%) scale(1.00)', opacity:1 }],
-                               { duration:320, easing:'cubic-bezier(.2,.8,.2,1)', fill:'both', delay:40 }); }catch(_){}
 
   function backdrop(ev){
     if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
@@ -730,13 +723,14 @@ function openRadial(token){
     var prevPE=radial.style.pointerEvents; radial.style.pointerEvents='none';
     var under=document.elementFromPoint(x,y); radial.style.pointerEvents=prevPE||'auto';
     var other=under && under.closest && under.closest('#tray .token');
-    if(other){ closeRadial(); $$('.token.selected').forEach(function(t){ t.classList.remove('selected');}); other.classList.add('selected'); openRadial(other); ev.preventDefault(); return; }
+    if(other){ closeRadial(); $$('.token.selected').forEach(function(t){t.classList.remove('selected');}); other.classList.add('selected'); openRadial(other); ev.preventDefault(); return; }
     closeRadial();
   }
   radial.addEventListener('pointerdown',backdrop,{passive:false});
   radial._backdropHandler=backdrop;
 
   radial.classList.remove('hidden');
+  radial.classList.remove('show');
   radial.setAttribute('aria-hidden','false');
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
@@ -749,7 +743,7 @@ function closeRadial(){
 }
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- EXPORT: keep live styles, capture only when custom title exists ---------- */
+/* ---------- EXPORT: robust, preserves row styles, capture title only if typed ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -760,6 +754,17 @@ on(window,'resize', refreshRadialOptions);
     }catch(_){ return false; }
   }
 
+  // Track if the user has actually typed a title; mirrored onto #boardPanel for export decision
+  function updateTitleState(){
+    var title = $('.board-title');
+    var panel = $('#boardPanel');
+    if (!title || !panel) return;
+    var txt = (title.innerText || title.textContent || '').replace(/[\s\u00A0]+/g,'').trim();
+    panel.dataset.hasTitle = txt.length ? '1' : '';
+  }
+  on($('.board-title'),'input', updateTitleState);
+  on($('.board-title'),'blur', updateTitleState);
+
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -767,7 +772,58 @@ on(window,'resize', refreshRadialOptions);
   document.body.appendChild(overlay);
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
-  on($('#saveBtn'),'click', function(){
+  function safeOnclone(panel, stripTokenRimOnly){
+    return function(doc){
+      try{
+        // tag the clone at the root to stabilize layout width
+        doc.documentElement.classList.add('exporting','desktop-capture');
+
+        // Pin outer width
+        var wrap = doc.querySelector('.wrap');
+        if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
+
+        var clone = doc.getElementById(panel.id);
+        if (!clone) return;
+
+        // remove non-export UI within the board only
+        clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
+
+        // Only hide placeholder/default title: if user hasn't typed anything (tracked on live)
+        var shouldKeepTitle = panel.dataset.hasTitle === '1';
+        var title = clone.querySelector('.board-title');
+        if (!shouldKeepTitle && title){
+          var wrapTitle = title.closest('.board-title-wrap');
+          if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
+          clone.classList.add('no-title');
+        }
+
+        // Freeze animations; DO NOT change row visuals; only remove token shimmer rim if requested
+        var reset = doc.createElement('style');
+        reset.textContent = `
+          .exporting *{ animation:none !important; transition:none !important; }
+          ${stripTokenRimOnly ? '.exporting .token::after{ content:none !important; display:none !important; }' : ''}
+          .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
+        `;
+        doc.head.appendChild(reset);
+
+        // ensure CORS on same-origin images
+        clone.querySelectorAll('img').forEach(function(img){
+          var src = img.getAttribute('src')||'';
+          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
+            img.setAttribute('crossorigin','anonymous');
+          }
+        });
+      }catch(_){
+        // Never throw from onclone; html2canvas will reject if this throws.
+      }
+    };
+  }
+
+  function tryCapture(panel, opts){
+    return html2canvas(panel, opts);
+  }
+
+  on($('#saveBtn'),'click', async function(){
     this.classList.add('bounce-anim');
     once(this,'animationend',()=>this.classList.remove('bounce-anim'));
 
@@ -775,78 +831,64 @@ on(window,'resize', refreshRadialOptions);
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
 
-    // clear transient selection cues
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     var panel = $('#boardPanel');
     if(!panel){ alert('Could not find the board to export.'); return; }
 
-    // Decide title handling from the LIVE DOM first
-    var liveTitle = $('.board-title');
-    var hideTitle = !liveTitle || liveTitle.textContent.replace(/[\s\u00A0]+/g,'') === '';
+    // Refresh title state just in case
+    updateTitleState();
 
     overlay.style.display='flex';
+    document.body.style.pointerEvents = 'none';
 
-    html2canvas(panel, {
+    // Primary pass: keep visual styling, only strip the token rim to avoid a color lift
+    var baseOpts = {
       backgroundColor: cssVar('--surface') || '#0f1115',
-      scale: Math.min(2, window.devicePixelRatio || 2),
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false,
       imageTimeout: 15000,
+      foreignObjectRendering: false,
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: Math.max(1200, document.documentElement.clientWidth),
+      windowWidth: Math.max(1300, document.documentElement.clientWidth || 0),
+      width: panel.getBoundingClientRect().width,
+      onclone: safeOnclone(panel, /* stripTokenRimOnly */ true)
+    };
 
-      ignoreElements: function(el){
-        if (hideTitle && el.classList && el.classList.contains('board-title-wrap')) return true;
-        if (el.classList && el.classList.contains('row-del')) return true;
-        if (el.id === 'radialPicker') return true;
-        return false;
-      },
+    // Fallback pass: flip to foreignObjectRendering (helps with complex CSS in some browsers)
+    var fallbackOpts = Object.assign({}, baseOpts, {
+      foreignObjectRendering: true,
+      onclone: safeOnclone(panel, true)
+    });
 
-      onclone: function(doc){
-        var wrap = doc.querySelector('.wrap');
-        if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
-
-        var clone = doc.querySelector('#'+panel.id);
-        if (!clone) return;
-
-        clone.querySelectorAll('.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
-
-        var st = doc.createElement('style');
-        st.textContent = `
-          *{ animation:none !important; transition:none !important; }
-          .token.selected{ outline:0 !important; }
-          .board-title[contenteditable]:empty::before{ content:'' !important; }
-          .token::after{ display:none !important; content:none !important; }
-        `;
-        doc.head.appendChild(st);
-
-        clone.querySelectorAll('img').forEach(function(img){
-          var src = img.getAttribute('src')||'';
-          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
-            img.setAttribute('crossorigin','anonymous');
-          }
-        });
-      }
-    }).then(function(canvas){
+    try{
+      var canvas = await tryCapture(panel, baseOpts);
       var a=document.createElement('a');
       a.href=canvas.toDataURL('image/png');
       a.download='tier-list.png';
       document.body.appendChild(a); a.click(); a.remove();
-    }).catch(function(err){
-      console.error('Export failed', err);
-      alert('Sorry, something went wrong while exporting.');
-    }).finally(function(){
+    }catch(err1){
+      console.error('[export] primary failed, trying fallback', err1);
+      try{
+        var canvas2 = await tryCapture(panel, fallbackOpts);
+        var a2=document.createElement('a');
+        a2.href=canvas2.toDataURL('image/png');
+        a2.download='tier-list.png';
+        document.body.appendChild(a2); a2.click(); a2.remove();
+      }catch(err2){
+        console.error('[export] fallback failed', err2);
+        alert('Sorry, something went wrong while exporting.');
+      }
+    }finally{
       overlay.style.display='none';
-    });
+      document.body.style.pointerEvents = '';
+    }
   });
 })();
-
-/* ---------- Color picker preview (none) ---------- */
-(function(){ /* intentionally blank */ })();
 
 /* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
@@ -899,15 +941,22 @@ function maybeClearAutosaveOnReload(){
 /* ---------- Full reset to original defaults ---------- */
 function resetToDefault(){
   try { closeRadial(); } catch(_) {}
-  historyStack = []; updateUndo();
+
+  historyStack = [];
+  updateUndo();
+
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
-  var title = $('.board-title'); if (title) title.textContent = '';
+
+  var title = $('.board-title');
+  if (title) { title.textContent = ''; }
+
   var boardEl = $('#tierBoard');
   if (boardEl){
     boardEl.innerHTML = '';
     tierIdx = 0;
     defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
   }
+
   var trayEl = $('#tray');
   if (trayEl){
     trayEl.innerHTML = '';
@@ -916,9 +965,15 @@ function resetToDefault(){
       trayEl.appendChild(buildNameToken(n, nextPreset(), true));
     });
   }
+
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
-  refitAllLabels(); refitAllChips();
+
+  refitAllLabels();
+  refitAllChips();
+
+  // refresh title dataset state after reset
+  var panel = $('#boardPanel'); if (panel) panel.dataset.hasTitle = '';
   announce('Everything reset to defaults.');
 }
 
@@ -1006,17 +1061,8 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help content — device-specific single tip (no bullets)
-  var help=$('#helpText') || $('.help');
-  if(help){
-    help.setAttribute('role','note');
-    help.setAttribute('aria-live','polite');
-    help.innerHTML = isSmall()
-      ? '<strong>Help</strong> Tap a circle in storage to place it; tap again to choose a row; drag to reorder or drag back.'
-      : '<strong>Help</strong> Drag circles into rows. Use Alt+←/→ to move within a row; Alt+↑/↓ to move between rows. Click a tier label to edit.';
-  }
+  // Help content (unchanged here)
 
-  // Click-to-place also on tray
   enableClickToPlace(tray);
   announce('Ready.');
   updateUndo();
@@ -1024,6 +1070,9 @@ document.addEventListener('DOMContentLoaded', function start(){
   refitAllChips();
 
   setupDesktopControlsMerge();
+
+  // keep boardPanel dataset synced with current title state
+  updateTitleState();
 
   /* ---------- Clear Board now = FULL RESET ---------- */
   on($('#trashClear'),'click', function(){
