@@ -1,6 +1,8 @@
 /* =========================================================
    Tier Maker — JS (compact picker, flat export, UI cleanup)
-   + Full Reset on "Clear Board" + bug-fix pass
+   + Full Reset on "Clear Board"
+   + Export fix (keep row styles; hide blank/default title)
+   + Radial dots match tier color & open reliably
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -90,7 +92,7 @@ function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
 var board=null, tray=null;
 
 /* =========================================================
-   ICONS
+   ICONS (Kalai Oval vibe) + swapper
 ========================================================= */
 var ICONS = {
   add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
@@ -99,8 +101,7 @@ var ICONS = {
   trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
   download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
   close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
-  /* Pencil-fill icon (sized to our button). */
-  edit:     { vb:'0 0 24 24', d:'M14.06 3.5a2.5 2.5 0 0 1 3.54 0l2.9 2.9a2.5 2.5 0 0 1 0 3.54L10.6 20.88a2 2 0 0 1-1.03.55l-5.2 1.02a1 1 0 0 1-1.17-1.17l1.02-5.2a2 2 0 0 1 .55-1.03L14.06 3.5zm3.18 1.41a.5.5 0 0 0-.71 0L15.2 6.25l2.55 2.54 1.33-1.33a.5.5 0 0 0 0-.71l-1.84-1.84zM5.9 16.57a.5.5 0 0 0-.13.26l-.67 3.43 3.43-.67a.5.5 0 0 0 .26-.13l7.57-7.57-2.55-2.55L5.9 16.57z' }
+  edit:     { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
 };
 function setIcon(container, name){
   if(!container) return;
@@ -269,7 +270,7 @@ var communityCast = [
   "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Xavier"
 ];
 
-/* ---------- Palette ---------- */
+/* ---------- Palette (MD3-inspired — black-text friendly) ---------- */
 var BASE_PALETTE = [
   '#FFD600','#FFEA00','#FFE176','#FFC400',
   '#FF9100','#FF6D00','#FFAB40','#FFB300',
@@ -289,9 +290,7 @@ function ensureForBlack(hex){
   return toned;
 }
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
-/* rotate start index each load so names don't keep same colors */
-var pIndex = Math.floor(Math.random() * presetPalette.length);
-function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
+var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
 /* ---------- Token label fitter ---------- */
 function fitLiveLabel(lbl){
@@ -319,7 +318,6 @@ function buildTokenBase(){
   el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
   el.style.touchAction='none'; el.setAttribute('draggable','false');
 
-  /* Keyboard reordering (unchanged) */
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
@@ -344,18 +342,13 @@ function buildTokenBase(){
     }
   });
 
-  /* ✅ Mobile: open radial on single tap while in tray */
-  on(el,'pointerdown', function(e){
-    if(!isSmall()) return;
-    if(e.pointerType!=='touch' && e.pointerType!=='pen') return;
-    if(!el.closest('#tray')) return;
-    e.preventDefault();
-    $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
-    el.classList.add('selected');
-    openRadial(el);
-  }, _supportsPassive?{passive:false}:false);
+  if (!isSmall()){
+    if (window.PointerEvent) enablePointerDrag(el);
+    else enableMouseTouchDragFallback(el);
+  }else{
+    enableMobileTouchDrag(el);
+  }
 
-  /* Click selection logic */
   on(el,'click', function(ev){
     ev.stopPropagation();
     var already = el.classList.contains('selected');
@@ -369,12 +362,18 @@ function buildTokenBase(){
     }
   });
 
-  if (!isSmall()){
-    if (window.PointerEvent) enablePointerDrag(el);
-    else enableMouseTouchDragFallback(el);
-  }else{
-    enableMobileTouchDrag(el);
-  }
+  // EXTRA: ensure picker opens on first quick tap on some mobile browsers
+  on(el,'pointerup', function(ev){
+    if (!isSmall()) return;
+    var inTray = !!el.closest('#tray');
+    var picker = $('#radialPicker');
+    if (inTray && picker && picker.classList.contains('hidden')) {
+      $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+      el.classList.add('selected');
+      openRadial(el);
+    }
+  }, _supportsPassive?{passive:true}:false);
+
   return el;
 }
 function buildNameToken(name, color, forceBlack){
@@ -632,31 +631,17 @@ function enableRowReorder(handle, row){
   }
 }
 
-/* ---------- Radial picker (mobile): compact + edge guard ---------- */
+/* ---------- Radial picker (mobile): compact + edge guard + COLOR MATCH ---------- */
 var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
 var radialForToken = null;
+var _radialGeo = [];
 
 function uniformCenter(cx, cy, R){
   var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
-
-/* little spring */
-function springIn(el, delay){
-  try{
-    el.animate(
-      [
-        { transform: 'translate(-50%,-50%) scale(0.72)', opacity: 0 },
-        { transform: 'translate(-50%,-50%) scale(1.08)', opacity: 1, offset: .58 },
-        { transform: 'translate(-50%,-50%) scale(0.96)', opacity: 1, offset: .82 },
-        { transform: 'translate(-50%,-50%) scale(1.00)', opacity: 1 }
-      ],
-      { duration: 420, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
-    );
-  }catch(_){}
-}
 
 function openRadial(token){
   if(!radial||!isSmall()) return;
@@ -671,6 +656,7 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
+  // Compact fan + left-edge guard
   var DOT=42, GAP=6;
   var degStart=210, degEnd=330;
   var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
@@ -682,26 +668,60 @@ function openRadial(token){
   var center=uniformCenter(cx, cy, R);
   if (center.x - R < EDGE) center.x = EDGE + R;
 
+  var positions=[];
+  for (var i=0;i<N;i++){
+    var ang=(degStart+stepDeg*i)*Math.PI/180;
+    positions.push({ i:i, x:center.x+R*Math.cos(ang), y:center.y+R*Math.sin(ang) });
+  }
+  positions.sort(function(a,b){ return a.x - b.x; });
+  _radialGeo = [];
+
+  radialCloseBtn.style.left = center.x+'px';
+  radialCloseBtn.style.top  = center.y+'px';
+
   radialOpts.innerHTML = '';
   for (let j=0;j<N;j++){
-    var row = rows[j];
-    var ang=(degStart+stepDeg*j)*Math.PI/180;
-    var x=center.x+R*Math.cos(ang), y=center.y+R*Math.sin(ang);
+    (function(j){
+      var row = rows[j];
+      var pos = positions[j];
 
-    var btn = document.createElement('button');
-    btn.type='button'; btn.className='radial-option';
-    btn.style.left = x+'px';
-    btn.style.top  = y+'px';
-    var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j]; btn.appendChild(dot);
+      // Pull the tier color directly from its label
+      var labelWrap = row.querySelector('.tier-label');
+      var tierColor = (labelWrap && (labelWrap.dataset.color || labelWrap.style.background)) || '#ffffff';
+      var textColor = contrastColor(tierColor);
 
-    on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
-    on(btn,'pointerleave', function(){ btn.classList.remove('is-hot'); });
-    on(btn,'pointerdown', function(e){ e.preventDefault(); });
-    on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
+      var btn = document.createElement('button');
+      btn.type='button';
+      btn.className='radial-option';
+      btn.style.left = pos.x+'px';
+      btn.style.top  = pos.y+'px';
+      btn.style.transform = 'translate(-50%,-50%)';
+      btn.style.transitionDelay = (j*14)+'ms';
 
-    radialOpts.appendChild(btn);
-    springIn(btn, j*24);
+      var dot=document.createElement('span');
+      dot.className='dot';
+      dot.textContent=labels[j];        // S / A / B / C / D / …
+      dot.style.background = tierColor;  // match tier label color
+      dot.style.color = textColor;
+      btn.appendChild(dot);
+
+      on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
+      on(btn,'pointerleave', function(){ btn.classList.remove('is-hot'); });
+      on(btn,'pointerdown', function(e){ e.preventDefault(); });
+      on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
+
+      radialOpts.appendChild(btn);
+      _radialGeo.push({row:row, btn:btn});
+      try{ btn.animate([{ transform:'translate(-50%,-50%) scale(.72)', opacity:0 },
+                        { transform:'translate(-50%,-50%) scale(1.00)', opacity:1 }],
+                        { duration:320, easing:'cubic-bezier(.2,.8,.2,1)', fill:'both', delay:j*24 }); }catch(_){}
+    })(j);
   }
+
+  // spring-in for close
+  try{ radialCloseBtn.animate([{ transform:'translate(-50%,-50%) scale(.72)', opacity:0 },
+                               { transform:'translate(-50%,-50%) scale(1.00)', opacity:1 }],
+                               { duration:320, easing:'cubic-bezier(.2,.8,.2,1)', fill:'both', delay:40 }); }catch(_){}
 
   function backdrop(ev){
     if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
@@ -710,7 +730,7 @@ function openRadial(token){
     var prevPE=radial.style.pointerEvents; radial.style.pointerEvents='none';
     var under=document.elementFromPoint(x,y); radial.style.pointerEvents=prevPE||'auto';
     var other=under && under.closest && under.closest('#tray .token');
-    if(other){ closeRadial(); $$('.token.selected').forEach(function(t){t.classList.remove('selected');}); other.classList.add('selected'); openRadial(other); ev.preventDefault(); return; }
+    if(other){ closeRadial(); $$('.token.selected').forEach(function(t){ t.classList.remove('selected');}); other.classList.add('selected'); openRadial(other); ev.preventDefault(); return; }
     closeRadial();
   }
   radial.addEventListener('pointerdown',backdrop,{passive:false});
@@ -718,13 +738,6 @@ function openRadial(token){
 
   radial.classList.remove('hidden');
   radial.setAttribute('aria-hidden','false');
-
-  /* center close button */
-  if (radialCloseBtn){
-    radialCloseBtn.style.left = center.x+'px';
-    radialCloseBtn.style.top  = center.y+'px';
-    springIn(radialCloseBtn, 40);
-  }
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
 function closeRadial(){
@@ -732,12 +745,11 @@ function closeRadial(){
   if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
   radial.classList.add('hidden');
   radial.setAttribute('aria-hidden','true');
-  radialOpts && (radialOpts.innerHTML='');
-  radialForToken = null;
+  radialForToken = null; _radialGeo = [];
 }
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- EXPORT: 1200px, keep style, title only if present ---------- */
+/* ---------- EXPORT: keep live styles, capture only when custom title exists ---------- */
 (function(){
   function isCrossOriginUrl(url){
     try{
@@ -763,79 +775,59 @@ on(window,'resize', refreshRadialOptions);
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
 
+    // clear transient selection cues
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     var panel = $('#boardPanel');
     if(!panel){ alert('Could not find the board to export.'); return; }
 
+    // Decide title handling from the LIVE DOM first
+    var liveTitle = $('.board-title');
+    var hideTitle = !liveTitle || liveTitle.textContent.replace(/[\s\u00A0]+/g,'') === '';
+
     overlay.style.display='flex';
-    document.body.style.pointerEvents = 'none';
 
     html2canvas(panel, {
       backgroundColor: cssVar('--surface') || '#0f1115',
-      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      scale: Math.min(2, window.devicePixelRatio || 2),
       useCORS: true,
-      allowTaint: false,
+      allowTaint: true,
       imageTimeout: 15000,
-      foreignObjectRendering: false,
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: 1300,
+      windowWidth: Math.max(1200, document.documentElement.clientWidth),
+
       ignoreElements: function(el){
-        if (el.tagName === 'IMG' && isCrossOriginUrl(el.getAttribute('src')||'')) return true;
+        if (hideTitle && el.classList && el.classList.contains('board-title-wrap')) return true;
+        if (el.classList && el.classList.contains('row-del')) return true;
         if (el.id === 'radialPicker') return true;
         return false;
       },
-      onclone: function(doc){
-        doc.documentElement.classList.add('exporting','desktop-capture');
 
+      onclone: function(doc){
         var wrap = doc.querySelector('.wrap');
         if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
 
         var clone = doc.querySelector('#'+panel.id);
         if (!clone) return;
 
-        /* remove only non-visual controls */
-        clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
+        clone.querySelectorAll('.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
 
-        /* hide default/blank title (capture only custom one) */
-        var DEFAULT_TITLE_PLACEHOLDER = 'Tier Board (optional title)';
-        var liveTitle = document.querySelector('.board-title');
-        var cloneTitle = clone.querySelector('.board-title');
-        function isTitleProvided(t){
-          if(!t) return false;
-          var raw = (t.textContent || '').trim();
-          if(!raw) return false;
-          return raw.toLowerCase() !== DEFAULT_TITLE_PLACEHOLDER.toLowerCase();
-        }
-        if (cloneTitle && !isTitleProvided(liveTitle)){
-          var wrapTitle = cloneTitle.closest('.board-title-wrap');
-          if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
-          clone.classList.add('no-title');
-        }
-
-        /* freeze motion only; keep look */
-        var reset = doc.createElement('style');
-        reset.textContent = `
-          .exporting *{ animation:none !important; transition:none !important; }
-          .exporting .token, .exporting .token:hover, .exporting .animate-drop, .exporting .flip-anim{ transform:none !important; }
-          .exporting .token::after{ content:none !important; display:none !important; }
-          .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
-          .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
+        var st = doc.createElement('style');
+        st.textContent = `
+          *{ animation:none !important; transition:none !important; }
+          .token.selected{ outline:0 !important; }
+          .board-title[contenteditable]:empty::before{ content:'' !important; }
+          .token::after{ display:none !important; content:none !important; }
         `;
-        doc.head.appendChild(reset);
+        doc.head.appendChild(st);
 
-        /* CORS for same-origin images */
         clone.querySelectorAll('img').forEach(function(img){
           var src = img.getAttribute('src')||'';
-          if (!src.startsWith('data:')) {
-            try{
-              if (new URL(src, location.href).origin === location.origin){
-                img.setAttribute('crossorigin','anonymous');
-              }
-            }catch(_){}
+          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
+            img.setAttribute('crossorigin','anonymous');
           }
         });
       }
@@ -849,10 +841,12 @@ on(window,'resize', refreshRadialOptions);
       alert('Sorry, something went wrong while exporting.');
     }).finally(function(){
       overlay.style.display='none';
-      document.body.style.pointerEvents = '';
     });
   });
 })();
+
+/* ---------- Color picker preview (none) ---------- */
+(function(){ /* intentionally blank */ })();
 
 /* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
@@ -902,38 +896,33 @@ function maybeClearAutosaveOnReload(){
   }catch(_){}
 }
 
-/* ---------- Full reset ---------- */
+/* ---------- Full reset to original defaults ---------- */
 function resetToDefault(){
   try { closeRadial(); } catch(_) {}
   historyStack = []; updateUndo();
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
-
   var title = $('.board-title'); if (title) title.textContent = '';
-
   var boardEl = $('#tierBoard');
   if (boardEl){
     boardEl.innerHTML = '';
     tierIdx = 0;
     defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
   }
-
   var trayEl = $('#tray');
   if (trayEl){
     trayEl.innerHTML = '';
-    pIndex = Math.floor(Math.random() * presetPalette.length);
+    pIndex = 0;
     communityCast.forEach(function(n){
       trayEl.appendChild(buildNameToken(n, nextPreset(), true));
     });
   }
-
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
-
   refitAllLabels(); refitAllChips();
   announce('Everything reset to defaults.');
 }
 
-/* ---------- Desktop inline-controls merge (unchanged) ---------- */
+/* ---------- Desktop inline-controls merge ---------- */
 function setupDesktopControlsMerge(){
   var controls = $('.controls'); if(!controls) return;
   var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
@@ -971,18 +960,6 @@ function setupDesktopControlsMerge(){
 
   apply();
   on(window,'resize', debounce(apply, 120));
-}
-
-/* ---------- Help content: device-specific, no bullets ---------- */
-function setHelp(){
-  var help=$('#helpText') || $('.help'); if(!help) return;
-  var isM = isSmall();
-  var tip = isM
-    ? '<strong>Help</strong><p>Phone: tap a circle in the storage to pick a row. Once placed, drag to reorder or drag back. Tap a tier label to edit. Tap the small “X” on a tier to delete it.</p>'
-    : '<strong>Help</strong><p>Desktop/iPad: drag circles into rows. Use Alt+←/→ to move within a row, Alt+↑/↓ between rows. Click a tier label to edit. Click the small “X” on a tier to delete it.</p>';
-  help.setAttribute('role','note');
-  help.setAttribute('aria-live','polite');
-  help.innerHTML = tip;
 }
 
 /* ---------- Init ---------- */
@@ -1029,9 +1006,17 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  setHelp();
-  on(window,'resize', debounce(setHelp, 150));
+  // Help content — device-specific single tip (no bullets)
+  var help=$('#helpText') || $('.help');
+  if(help){
+    help.setAttribute('role','note');
+    help.setAttribute('aria-live','polite');
+    help.innerHTML = isSmall()
+      ? '<strong>Help</strong> Tap a circle in storage to place it; tap again to choose a row; drag to reorder or drag back.'
+      : '<strong>Help</strong> Drag circles into rows. Use Alt+←/→ to move within a row; Alt+↑/↓ to move between rows. Click a tier label to edit.';
+  }
 
+  // Click-to-place also on tray
   enableClickToPlace(tray);
   announce('Ready.');
   updateUndo();
@@ -1040,6 +1025,7 @@ document.addEventListener('DOMContentLoaded', function start(){
 
   setupDesktopControlsMerge();
 
+  /* ---------- Clear Board now = FULL RESET ---------- */
   on($('#trashClear'),'click', function(){
     var ok = confirm('Reset everything to the original state? This clears all circles, custom labels, uploaded items, and the title.');
     if (!ok) return;
