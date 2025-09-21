@@ -1,7 +1,9 @@
 /* =========================================================
-   Tier Maker — JS (compact picker, flat export, UI cleanup)
-   + Full Reset on "Clear Board"
-   + Robust Export (fallback) + Color-coded radial dots
+   Tier Maker — Unified JS
+   - Robust html2canvas export (image conversion, retries, css reset)
+   - Compact mobile picker + tier-colored dots
+   - Token color rotation on load
+   - Full reset behavior & stable existing features retained
 ========================================================= */
 
 /* ---------- Polyfills ---------- */
@@ -162,6 +164,7 @@ function buildRowDom(){
   del.setAttribute('aria-label','Delete row');
   setIcon(del, 'close');
 
+  // place delete on the label corner (append to labelWrap)
   labelWrap.appendChild(handle);
   labelWrap.appendChild(chip);
   labelWrap.appendChild(del);
@@ -223,6 +226,7 @@ function createRow(cfg){
   chip.style.background = 'transparent';
   chip.style.color = contrastColor(cfg.color);
 
+  // delete X matches darkened label color
   del.style.background = darken(cfg.color, 0.35);
 
   var tint = tintFrom(cfg.color);
@@ -233,7 +237,8 @@ function createRow(cfg){
   on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
   on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
 
-  on(del,'click', function(){
+  on(del,'click', function(ev){
+    ev.stopPropagation();
     var ok = confirm('Delete this row? Items in it will return to Image Storage.');
     if(!ok) return;
     var tokens = $$('.token', drop);
@@ -246,23 +251,27 @@ function createRow(cfg){
 
   enableRowReorder(handle, node);
   enableClickToPlace(drop);
+
+  // when label color dataset changes later, keep label chip & dataset consistent
+  Object.defineProperty(chip, 'tierColor', { get: function(){ return chip.dataset.color; }, set: function(v){ chip.dataset.color=v; labelWrap.style.background=v; del.style.background=darken(v,0.35); chip.style.color=contrastColor(v); } });
+
   return node;
 }
 
 /* ---------- Defaults ---------- */
 var defaultTiers = [
-  { label:'S', color:'#ff6b6b' },
-  { label:'A', color:'#f6c02f' },
-  { label:'B', color:'#22c55e' },
-  { label:'C', color:'#3b82f6' },
-  { label:'D', color:'#a78bfa' }
+  { label:'S', color:'#FF5252' },
+  { label:'A', color:'#FFD600' },
+  { label:'B', color:'#00E676' },
+  { label:'C', color:'#40C4FF' },
+  { label:'D', color:'#B388FF' }
 ];
 
 /* ---------- Tier cycle ---------- */
-var TIER_CYCLE = ['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9'];
+var TIER_CYCLE = ['#FF5252','#FFD600','#00E676','#40C4FF','#B388FF','#FF9100','#FF4081','#7C4DFF','#00B0FF','#C6FF00'];
 var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
 
-/* ---------- Preset names ---------- */
+/* ---------- Preset names (Keyon removed) ---------- */
 var communityCast = [
   "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
   "Gavin","Harry","Jay","Jeremy","Katie","Kiev","Kikki","Kyle","Lewis","Meegan",
@@ -290,6 +299,9 @@ function ensureForBlack(hex){
 }
 var presetPalette = BASE_PALETTE.map(ensureForBlack);
 var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
+
+/* rotate starting index each load so people don't get same color repeatedly */
+function rotatePresetStart(){ pIndex = Math.floor(Math.random() * presetPalette.length); }
 
 /* ---------- Token label fitter ---------- */
 function fitLiveLabel(lbl){
@@ -320,7 +332,7 @@ function buildTokenBase(){
   on(el,'keydown', function(e){
     if(!(e.altKey || e.metaKey)) return;
     var zone = el.parentElement;
-    if(!zone || !zone.classList.contains('dropzone') && zone.id!=='tray') return;
+    if(!zone || (!zone.classList.contains('dropzone') && zone.id!=='tray')) return;
 
     if(e.key==='ArrowLeft' || e.key==='ArrowRight'){
       e.preventDefault();
@@ -353,11 +365,23 @@ function buildTokenBase(){
     var already = el.classList.contains('selected');
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     var inTray = !!el.closest('#tray');
+
+    // Mobile: if in tray, open radial picker on tap; if already selected, toggle close
+    if (isSmall() && inTray){
+      if (!already){
+        el.classList.add('selected');
+        openRadial(el);
+      } else {
+        closeRadial();
+        el.classList.remove('selected');
+      }
+      return;
+    }
+
     if (!already){
       el.classList.add('selected');
-      if (isSmall() && inTray) openRadial(el);
-    } else if (isSmall() && inTray){
-      closeRadial();
+    } else {
+      el.classList.remove('selected');
     }
   });
   return el;
@@ -617,7 +641,7 @@ function enableRowReorder(handle, row){
   }
 }
 
-/* ---------- Radial picker (mobile): compact + edge guard + color-coded dots ---------- */
+/* ---------- Radial picker (mobile): compact + edge guard + colored dots ---------- */
 var radial = $('#radialPicker');
 var radialOpts = radial?$('.radial-options', radial):null;
 var radialCloseBtn = radial?$('.radial-close', radial):null;
@@ -629,17 +653,17 @@ function uniformCenter(cx, cy, R){
 }
 function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-/* WAAPI spring */
+/* WAAPI spring (compact) */
 function springIn(el, delay){
   try{
     el.animate(
       [
-        { transform: 'translate(-50%,-50%) scale(0.72)', opacity: 0 },
-        { transform: 'translate(-50%,-50%) scale(1.08)', opacity: 1, offset: .58 },
-        { transform: 'translate(-50%,-50%) scale(0.96)', opacity: 1, offset: .82 },
+        { transform: 'translate(-50%,-50%) scale(0.78)', opacity: 0 },
+        { transform: 'translate(-50%,-50%) scale(1.04)', opacity: 1, offset: .58 },
+        { transform: 'translate(-50%,-50%) scale(0.98)', opacity: 1, offset: .82 },
         { transform: 'translate(-50%,-50%) scale(1.00)', opacity: 1 }
       ],
-      { duration: 420, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
+      { duration: 360, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
     );
   }catch(_){}
 }
@@ -657,7 +681,7 @@ function openRadial(token){
   var labels = rows.map(function(r){ return rowLabel(r); });
   var N = labels.length; if (!N) return;
 
-  // Compact fan + left-edge guard
+  // Compact fan + left-edge guard (no smoosh)
   var DOT=42, GAP=6;
   var degStart=210, degEnd=330;
   var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
@@ -691,17 +715,19 @@ function openRadial(token){
       btn.style.left = pos.x+'px';
       btn.style.top  = pos.y+'px';
       btn.style.transform = 'translate(-50%,-50%)';
-      btn.style.transitionDelay = (j*14)+'ms';
+      btn.style.transitionDelay = (j*12)+'ms';
 
-      var dot=document.createElement('span'); dot.className='dot';
-      dot.textContent=labels[j];
+      var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j];
 
-      // NEW: color-code to tier label color
-      var labelWrap = row.querySelector('.tier-label');
-      var rowColor = (labelWrap && (labelWrap.dataset.color || labelWrap.style.background)) || '#ffffff';
-      dot.style.background = rowColor;
-      dot.style.color = contrastColor(rowColor);
-      dot.style.borderColor = 'rgba(0,0,0,.10)';
+      // color the dot to match the tier label if available
+      try {
+        var labCol = row.querySelector('.tier-label').dataset.color || (row.querySelector('.tier-label').style.background || '');
+        if(labCol){
+          dot.style.background = labCol;
+          dot.style.color = contrastColor(labCol);
+          dot.style.border = '1px solid rgba(0,0,0,.08)';
+        }
+      } catch(_) {}
 
       btn.appendChild(dot);
 
@@ -712,7 +738,7 @@ function openRadial(token){
 
       radialOpts.appendChild(btn);
       _radialGeo.push({row:row, btn:btn});
-      springIn(btn, j*24);
+      springIn(btn, j*18); // compact spring
     })(j);
   }
 
@@ -730,7 +756,6 @@ function openRadial(token){
   radial._backdropHandler=backdrop;
 
   radial.classList.remove('hidden');
-  radial.classList.remove('show');
   radial.setAttribute('aria-hidden','false');
 }
 if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
@@ -743,28 +768,76 @@ function closeRadial(){
 }
 on(window,'resize', refreshRadialOptions);
 
-/* ---------- EXPORT: robust, preserves row styles, capture title only if typed ---------- */
+/* ---------- Utilities for export image prefetch ---------- */
+function isCrossOriginUrl(url){
+  try{
+    if (!url) return false;
+    if (url.startsWith('data:')) return false;
+    const u = new URL(url, location.href);
+    return u.origin !== location.origin;
+  }catch(_){ return false; }
+}
+
+/* Try to fetch images and convert to data URLs prior to export.
+   Returns Promise resolving to a map { originalSrc: dataURL | originalSrc (fallback) }
+*/
+function prefetchImagesForExport(panel){
+  var imgs = [].slice.call((panel.querySelectorAll('img')));
+  if (imgs.length === 0) return Promise.resolve({});
+
+  var promises = imgs.map(function(img){
+    var src = img.getAttribute('src') || '';
+    if (!src || src.startsWith('data:')) return Promise.resolve({ src: src, result: src });
+
+    // If same-origin or server provides CORS, try fetch+blob->dataURL
+    return fetch(src, { mode: 'cors' }).then(function(resp){
+      if(!resp.ok) throw new Error('fetch-failed');
+      return resp.blob();
+    }).then(function(blob){
+      return new Promise(function(resolve){
+        var r = new FileReader();
+        r.onload = function(ev){ resolve({ src: src, result: ev.target.result }); };
+        r.onerror = function(){ resolve({ src: src, result: src }); };
+        r.readAsDataURL(blob);
+      });
+    }).catch(function(){
+      // fallback: try to set crossOrigin attribute and let html2canvas attempt (no dataURL available)
+      return Promise.resolve({ src: src, result: src });
+    });
+  });
+
+  return Promise.all(promises).then(function(results){
+    var map = {};
+    results.forEach(function(r){ map[r.src] = r.result; });
+    return map;
+  });
+}
+
+/* ---------- Canvas validation ---------- */
+function isCanvasBlank(canvas){
+  try{
+    var ctx = canvas.getContext('2d');
+    var w = Math.max(1, Math.floor(canvas.width));
+    var h = Math.max(1, Math.floor(canvas.height));
+    // sample a few pixels across the canvas (to be fast) rather than getImageData for entire canvas
+    var stepX = Math.max(1, Math.floor(w / 40));
+    var stepY = Math.max(1, Math.floor(h / 40));
+    for (var y = 0; y < h; y += Math.max(1, Math.floor(h/20))){
+      for (var x = 0; x < w; x += Math.max(1, Math.floor(w/20))){
+        var p = ctx.getImageData(x, y, 1, 1).data;
+        // check if alpha > 0 and not purely a single-color transparent background
+        if (p[3] > 8) { return false; }
+      }
+    }
+    // if we reach here, likely blank/transparent
+    return true;
+  }catch(e){
+    return false; // be conservative -> assume not blank if error
+  }
+}
+
+/* ---------- EXPORT: robust attempts, flatten CSS, convert images, 1200px width ---------- */
 (function(){
-  function isCrossOriginUrl(url){
-    try{
-      if (!url) return false;
-      if (url.startsWith('data:')) return false;
-      const u = new URL(url, location.href);
-      return u.origin !== location.origin;
-    }catch(_){ return false; }
-  }
-
-  // Track if the user has actually typed a title; mirrored onto #boardPanel for export decision
-  function updateTitleState(){
-    var title = $('.board-title');
-    var panel = $('#boardPanel');
-    if (!title || !panel) return;
-    var txt = (title.innerText || title.textContent || '').replace(/[\s\u00A0]+/g,'').trim();
-    panel.dataset.hasTitle = txt.length ? '1' : '';
-  }
-  on($('.board-title'),'input', updateTitleState);
-  on($('.board-title'),'blur', updateTitleState);
-
   var overlay=document.createElement('div');
   overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
   overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
@@ -772,58 +845,15 @@ on(window,'resize', refreshRadialOptions);
   document.body.appendChild(overlay);
   var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
 
-  function safeOnclone(panel, stripTokenRimOnly){
-    return function(doc){
-      try{
-        // tag the clone at the root to stabilize layout width
-        doc.documentElement.classList.add('exporting','desktop-capture');
-
-        // Pin outer width
-        var wrap = doc.querySelector('.wrap');
-        if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
-
-        var clone = doc.getElementById(panel.id);
-        if (!clone) return;
-
-        // remove non-export UI within the board only
-        clone.querySelectorAll('.row-del,.title-pen,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
-
-        // Only hide placeholder/default title: if user hasn't typed anything (tracked on live)
-        var shouldKeepTitle = panel.dataset.hasTitle === '1';
-        var title = clone.querySelector('.board-title');
-        if (!shouldKeepTitle && title){
-          var wrapTitle = title.closest('.board-title-wrap');
-          if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
-          clone.classList.add('no-title');
-        }
-
-        // Freeze animations; DO NOT change row visuals; only remove token shimmer rim if requested
-        var reset = doc.createElement('style');
-        reset.textContent = `
-          .exporting *{ animation:none !important; transition:none !important; }
-          ${stripTokenRimOnly ? '.exporting .token::after{ content:none !important; display:none !important; }' : ''}
-          .exporting .board-title[contenteditable]:empty::before{ content:'' !important; }
-        `;
-        doc.head.appendChild(reset);
-
-        // ensure CORS on same-origin images
-        clone.querySelectorAll('img').forEach(function(img){
-          var src = img.getAttribute('src')||'';
-          if (!src.startsWith('data:') && !isCrossOriginUrl(src)) {
-            img.setAttribute('crossorigin','anonymous');
-          }
-        });
-      }catch(_){
-        // Never throw from onclone; html2canvas will reject if this throws.
-      }
-    };
+  function attemptHtml2Canvas(panel, imageMap, opts){
+    return html2canvas(panel, opts).then(function(canvas){
+      // validate canvas is not blank
+      if (isCanvasBlank(canvas)) throw new Error('blank-canvas');
+      return canvas;
+    });
   }
 
-  function tryCapture(panel, opts){
-    return html2canvas(panel, opts);
-  }
-
-  on($('#saveBtn'),'click', async function(){
+  on($('#saveBtn'),'click', function(){
     this.classList.add('bounce-anim');
     once(this,'animationend',()=>this.classList.remove('bounce-anim'));
 
@@ -831,64 +861,178 @@ on(window,'resize', refreshRadialOptions);
       alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
     }
 
+    // reset selection/drag states
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     var panel = $('#boardPanel');
     if(!panel){ alert('Could not find the board to export.'); return; }
 
-    // Refresh title state just in case
-    updateTitleState();
-
     overlay.style.display='flex';
     document.body.style.pointerEvents = 'none';
 
-    // Primary pass: keep visual styling, only strip the token rim to avoid a color lift
-    var baseOpts = {
-      backgroundColor: cssVar('--surface') || '#0f1115',
-      scale: Math.min(2, window.devicePixelRatio || 1.5),
-      useCORS: true,
-      allowTaint: false,
-      imageTimeout: 15000,
-      foreignObjectRendering: false,
-      logging: false,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: Math.max(1300, document.documentElement.clientWidth || 0),
-      width: panel.getBoundingClientRect().width,
-      onclone: safeOnclone(panel, /* stripTokenRimOnly */ true)
-    };
+    // Step 1: prefetch images (try convert to dataURLs)
+    prefetchImagesForExport(panel).then(function(imageMap){
+      // apply dataURLs to cloned document later in onclone; but also temporarily set attributes on original document
+      // We don't mutate original srcs permanently — we'll stash original srcs to restore later if we replace them.
+      var replaced = [];
+      Object.keys(imageMap).forEach(function(origSrc){
+        var newSrc = imageMap[origSrc];
+        if (newSrc && newSrc !== origSrc){
+          // replace matches in the live DOM (helps html2canvas cloning and ensures cloned doc has data URLs)
+          $$('.token img').forEach(function(imgEl){
+            if (imgEl.getAttribute('src') === origSrc){
+              replaced.push({ el: imgEl, orig: origSrc });
+              imgEl.setAttribute('src', newSrc);
+            }
+          });
+        }
+      });
 
-    // Fallback pass: flip to foreignObjectRendering (helps with complex CSS in some browsers)
-    var fallbackOpts = Object.assign({}, baseOpts, {
-      foreignObjectRendering: true,
-      onclone: safeOnclone(panel, true)
-    });
+      // Build array of html2canvas option variations to attempt
+      var baseOptions = {
+        backgroundColor: cssVar('--surface') || '#0f1115',
+        scale: Math.min(2, window.devicePixelRatio || 1.5),
+        useCORS: true,
+        allowTaint: false,
+        imageTimeout: 15000,
+        foreignObjectRendering: false,
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        width: 1200,
+        windowWidth: 1200
+      };
 
-    try{
-      var canvas = await tryCapture(panel, baseOpts);
-      var a=document.createElement('a');
-      a.href=canvas.toDataURL('image/png');
-      a.download='tier-list.png';
-      document.body.appendChild(a); a.click(); a.remove();
-    }catch(err1){
-      console.error('[export] primary failed, trying fallback', err1);
-      try{
-        var canvas2 = await tryCapture(panel, fallbackOpts);
-        var a2=document.createElement('a');
-        a2.href=canvas2.toDataURL('image/png');
-        a2.download='tier-list.png';
-        document.body.appendChild(a2); a2.click(); a2.remove();
-      }catch(err2){
-        console.error('[export] fallback failed', err2);
-        alert('Sorry, something went wrong while exporting.');
+      // Variation attempts: start conservative, then try foreignObjectRendering if needed, and then a lower-level fallback
+      var attempts = [
+        Object.assign({}, baseOptions, { useCORS: true, foreignObjectRendering: false }),
+        Object.assign({}, baseOptions, { useCORS: true, foreignObjectRendering: true }),
+        Object.assign({}, baseOptions, { useCORS: false, foreignObjectRendering: true })
+      ];
+
+      // onclone adjustments — aggressive reset to avoid backdrop-filter/transform/animations
+      function oncloneReset(doc){
+        // mark clone as exporting and pinned width
+        doc.documentElement.classList.add('exporting','desktop-capture');
+
+        // pin wrap width & forcing 1200px
+        var wrap = doc.querySelector('.wrap');
+        if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
+
+        // find target clone panel and sanitize
+        var clonePanel = doc.querySelector('#'+panel.id);
+        if (!clonePanel) return;
+
+        // Remove UI elements that shouldn't be exported
+        clonePanel.querySelectorAll('.row-del,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
+
+        // If title is blank, remove the title container so it won't be captured
+        var title = clonePanel.querySelector('.board-title');
+        if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
+          var wrapTitle = title.closest('.board-title-wrap');
+          if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
+          clonePanel.classList.add('no-title');
+        }
+
+        // Aggressive CSS reset & flattening to avoid html2canvas issues
+        var reset = doc.createElement('style');
+        reset.textContent = `
+          /* Remove filters, transforms, animations and complex backgrounds */
+          * { animation: none !important; transition: none !important; transform: none !important !important; }
+          :root, html, body { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+          .panel, .tier-drop, .wrap { background: ${cssVar('--surface-raised') || '#151820'} !important; box-shadow: none !important; border:1px solid ${cssVar('--border') || 'rgba(255,255,255,.08)'} !important; }
+          .token::after, .token.drag-ghost::before, .token.dragging-cue::before { display: none !important; content: none !important; }
+          .token, .token img { filter: none !important; box-shadow: none !important; }
+          .board-title[contenteditable]:empty::before{ content:'' !important; }
+          .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
+          /* ensure fonts/sizes not scaled */
+          .wrap { width: 1200px !important; max-width:1200px !important; }
+        `;
+        // append to head of clone doc
+        doc.head.appendChild(reset);
+
+        // Convert any remaining <img> in the clone to data URLs where possible
+        var cloneImgs = clonePanel.querySelectorAll('img');
+        cloneImgs.forEach(function(ci){
+          var src = ci.getAttribute('src') || '';
+          if (src && !src.startsWith('data:')){
+            // If prefetch created a dataURL mapping, replace it
+            if (imageMap[src] && imageMap[src].startsWith('data:')) {
+              ci.setAttribute('src', imageMap[src]);
+            } else {
+              // attempt to draw the image onto a canvas and get data URL (best effort)
+              try {
+                var tmpImg = new Image();
+                tmpImg.crossOrigin = 'anonymous';
+                tmpImg.src = src;
+                tmpImg.onload = function(){
+                  try {
+                    var c = doc.createElement('canvas');
+                    c.width = tmpImg.naturalWidth; c.height = tmpImg.naturalHeight;
+                    var ctx = c.getContext('2d');
+                    ctx.drawImage(tmpImg, 0, 0);
+                    var data = c.toDataURL();
+                    ci.setAttribute('src', data);
+                  } catch(_) {}
+                };
+              } catch(_) {}
+            }
+          }
+        });
       }
-    }finally{
+
+      // Run attempts sequentially
+      var attemptIndex = 0;
+      function tryNextAttempt(){
+        if (attemptIndex >= attempts.length){
+          overlay.style.display='none';
+          document.body.style.pointerEvents = '';
+          // restore any replaced original images
+          replaced.forEach(function(r){ try { r.el.setAttribute('src', r.orig); } catch(_){} });
+          alert('Sorry, something went wrong while exporting.');
+          return;
+        }
+        var opts = attempts[attemptIndex];
+        attemptIndex++;
+
+        // clone hook
+        opts.onclone = function(doc){
+          oncloneReset(doc);
+        };
+
+        attemptHtml2Canvas(panel, imageMap, opts).then(function(canvas){
+          // success -> download
+          var a=document.createElement('a');
+          a.href=canvas.toDataURL('image/png');
+          a.download='tier-list.png';
+          document.body.appendChild(a); a.click(); a.remove();
+
+          overlay.style.display='none';
+          document.body.style.pointerEvents = '';
+          // restore any replaced original images
+          replaced.forEach(function(r){ try { r.el.setAttribute('src', r.orig); } catch(_){} });
+        }).catch(function(err){
+          // try again with next options
+          console.warn('Export attempt failed:', err && err.message);
+          // small delay then next attempt
+          setTimeout(tryNextAttempt, 350);
+        });
+      }
+
+      // start attempts
+      tryNextAttempt();
+
+    }).catch(function(err){
+      console.error('prefetchImagesForExport error', err);
       overlay.style.display='none';
       document.body.style.pointerEvents = '';
-    }
+      alert('Sorry, something went wrong while preparing images for export.');
+    });
   });
 })();
+
+/* ---------- Color picker preview removed intentionally ---------- */
 
 /* ---------- Autosave ---------- */
 var AUTOSAVE_KEY='tm_autosave_v1';
@@ -940,40 +1084,45 @@ function maybeClearAutosaveOnReload(){
 
 /* ---------- Full reset to original defaults ---------- */
 function resetToDefault(){
+  // Close mobile picker if it’s open
   try { closeRadial(); } catch(_) {}
 
+  // Clear undo history
   historyStack = [];
   updateUndo();
 
+  // Nuke autosave
   try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
 
+  // Clear board title (keeps placeholder)
   var title = $('.board-title');
-  if (title) { title.textContent = ''; }
+  if (title) title.textContent = '';
 
+  // Rebuild default rows
   var boardEl = $('#tierBoard');
   if (boardEl){
     boardEl.innerHTML = '';
-    tierIdx = 0;
+    tierIdx = 0;                              // reset tier color cycle
     defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
   }
 
+  // Re-seed the tray with the original name tokens (no images)
   var trayEl = $('#tray');
   if (trayEl){
     trayEl.innerHTML = '';
-    pIndex = 0;
+    rotatePresetStart();                      // randomize starting palette
+    pIndex = pIndex;                          // pIndex already set by rotatePresetStart
     communityCast.forEach(function(n){
       trayEl.appendChild(buildNameToken(n, nextPreset(), true));
     });
   }
 
+  // Tidy UI
   $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
   $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
   refitAllLabels();
   refitAllChips();
-
-  // refresh title dataset state after reset
-  var panel = $('#boardPanel'); if (panel) panel.dataset.hasTitle = '';
   announce('Everything reset to defaults.');
 }
 
@@ -1024,10 +1173,13 @@ document.addEventListener('DOMContentLoaded', function start(){
   swapAllIcons();
   maybeClearAutosaveOnReload();
 
+  // rotate starting preset index so tokens change colors across loads
+  rotatePresetStart();
+
   var saved=null;
   try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
   if (saved && restoreState(saved)){
-    announce('Restored your last session.'); 
+    announce('Restored your last session.');
   } else {
     defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
     communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
@@ -1045,7 +1197,7 @@ document.addEventListener('DOMContentLoaded', function start(){
   on($('#addNameBtn'),'click', function(){
     var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
     var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value;
+    var chosen = colorInput.value || nextPreset();
     tray.appendChild(buildNameToken(name, chosen, false));
     nameInput.value='';
     colorInput.value = nextPreset();
@@ -1061,8 +1213,19 @@ document.addEventListener('DOMContentLoaded', function start(){
     });
   });
 
-  // Help content (unchanged here)
+  // Help content — single-tip that varies by device
+  var help=$('#helpText') || $('.help');
+  if(help){
+    help.setAttribute('role','note');
+    help.setAttribute('aria-live','polite');
+    if (isSmall()){
+      help.innerHTML = '<strong>Help</strong><br><span><b>Phone:</b> Tap a circle in Image Storage to pick a row. Drag to reorder or drag back to remove.</span>';
+    } else {
+      help.innerHTML = '<strong>Help</strong><br><span><b>Desktop/iPad:</b> Drag circles into rows. Use Alt+←/→ to move within a row; Alt+↑/↓ to move between rows. Click a tier label to edit.</span>';
+    }
+  }
 
+  // Click-to-place also on tray
   enableClickToPlace(tray);
   announce('Ready.');
   updateUndo();
@@ -1070,9 +1233,6 @@ document.addEventListener('DOMContentLoaded', function start(){
   refitAllChips();
 
   setupDesktopControlsMerge();
-
-  // keep boardPanel dataset synced with current title state
-  updateTitleState();
 
   /* ---------- Clear Board now = FULL RESET ---------- */
   on($('#trashClear'),'click', function(){
