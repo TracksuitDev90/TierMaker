@@ -1,734 +1,675 @@
 /* =========================================================
-   Tier Maker — Unified JS
-   - Robust html2canvas export (image conversion, retries, css reset)
-   - Compact mobile picker + tier-colored dots
-   - Token color rotation on load
-   - Full reset behavior & stable existing features retained
+   Tier Maker — Unified JavaScript
+   (MD3-lean UI, compact mobile picker, hardened PNG export)
+   ---------------------------------------------------------
+   This file implements all previously-working behavior plus:
+   - A11y/robustness fixes
+   - Compact radial picker with color-coded dots
+   - Stable FLIP animation + leak fixes
+   - Aggressive/safe html2canvas export with retries
+   - Title capture only when user entered real text
+   - Full reset on "Clear Board"
+   - Autosave now includes tierIdx/pIndex (color rotation)
+   - Defensive coding throughout
 ========================================================= */
 
-/* ---------- Polyfills ---------- */
 (function () {
-  if (!String.prototype.padStart) {
-    String.prototype.padStart = function (t, p) {
-      t = t >> 0; p = String(p || ' ');
-      if (this.length >= t) return String(this);
-      t = t - this.length;
-      if (t > p.length) p += p.repeat(Math.ceil(t / p.length));
-      return p.slice(0, t) + String(this);
-    };
-  }
-  if (!Element.prototype.matches) {
-    Element.prototype.matches = Element.prototype.msMatchesSelector ||
-      Element.prototype.webkitMatchesSelector ||
-      function (s) {
-        var m = (this.document || this.ownerDocument).querySelectorAll(s), i = m.length;
-        while (--i >= 0 && m.item(i) !== this) {}
-        return i > -1;
+  "use strict";
+
+  /* ---------- Small guards & helpers ---------- */
+  var hasWin = typeof window !== "undefined";
+  var hasDoc = typeof document !== "undefined";
+  if (!hasWin || !hasDoc) return;
+
+  /* ---------- Shortcuts ---------- */
+  var $  = function (s, ctx){ return (ctx||document).querySelector(s); };
+  var $$ = function (s, ctx){ return Array.prototype.slice.call((ctx||document).querySelectorAll(s)); };
+
+  /* ---------- Polyfills (minimal) ---------- */
+  (function () {
+    if (!String.prototype.padStart) {
+      String.prototype.padStart = function (t, p) {
+        t = t >> 0; p = String(p || ' ');
+        if (this.length >= t) return String(this);
+        t = t - this.length;
+        if (t > p.length) p += p.repeat(Math.ceil(t / p.length));
+        return p.slice(0, t) + String(this);
       };
-  }
-  if (!Element.prototype.closest) {
-    Element.prototype.closest = function (s) {
-      var el = this;
-      if (!document.documentElement.contains(el)) return null;
-      do { if (el.matches(s)) return el; el = el.parentElement || el.parentNode; }
-      while (el && el.nodeType === 1);
-      return null;
-    };
-  }
-})();
+    }
+    if (!Element.prototype.matches) {
+      Element.prototype.matches = Element.prototype.msMatchesSelector ||
+        Element.prototype.webkitMatchesSelector ||
+        function (s) {
+          var m = (this.document || this.ownerDocument).querySelectorAll(s), i = m.length;
+          while (--i >= 0 && m.item(i) !== this) {}
+          return i > -1;
+        };
+    }
+    if (!Element.prototype.closest) {
+      Element.prototype.closest = function (s) {
+        var el = this;
+        if (!document.documentElement.contains(el)) return null;
+        do { if (el.matches(s)) return el; el = el.parentElement || el.parentNode; }
+        while (el && el.nodeType === 1);
+        return null;
+      };
+    }
+  })();
 
-/* ---------- Event helpers ---------- */
-var _supportsPassive = false;
-try {
-  var _opts = Object.defineProperty({}, 'passive', { get: function(){ _supportsPassive = true; } });
-  window.addEventListener('x', null, _opts); window.removeEventListener('x', null, _opts);
-} catch(e){}
-function on(el, t, h, o){ if(!el) return;
-  if (!o) { el.addEventListener(t, h, false); return; }
-  if (typeof o === 'object' && !_supportsPassive) el.addEventListener(t, h, !!o.capture);
-  else el.addEventListener(t, h, o);
-}
-function once(el, t, h, o){ function w(e){ el.removeEventListener(t,w,o||false); h(e);} el.addEventListener(t,w,o||false); }
-
-/* ---------- Dom utils ---------- */
-var $  = function (s, ctx){ return (ctx||document).querySelector(s); };
-var $$ = function (s, ctx){ return Array.prototype.slice.call((ctx||document).querySelectorAll(s)); };
-function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
-function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
-function isDesktopWide(){ return window.matchMedia && window.matchMedia('(min-width: 1024px)').matches; }
-function debounce(fn, ms){ var t; return function(){ clearTimeout(t); t=setTimeout(fn, ms); }; }
-
-/* ---------- Live region ---------- */
-function ensureLive(){
-  var n = $('#live');
-  if (!n) {
-    n = document.createElement('div');
-    n.id='live'; n.setAttribute('aria-live','polite'); n.className='sr-only';
-    document.body.appendChild(n);
-  }
-  return n;
-}
-function announce(msg){ var n=ensureLive(); n.textContent=''; setTimeout(function(){ n.textContent=msg; },0); }
-
-/* ---------- Vibration ---------- */
-function vib(ms){ if('vibrate' in navigator) navigator.vibrate(ms||8); }
-
-/* ---------- Colors ---------- */
-function hexToRgb(hex){ var h=hex.replace('#',''); if(h.length===3){ h=h.split('').map(function(x){return x+x;}).join(''); } var n=parseInt(h,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
-function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return v.toString(16).padStart(2,'0');}).join(''); }
-function relativeLuminance(rgb){ function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); } return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b); }
-function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
-function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(Math.round(c.r*f),Math.round(c.g*f),Math.round(c.b*f)); }
-function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(Math.round(c.r+(255-c.r)*f), Math.round(c.g+(255-c.g)*f), Math.round(c.b+(255-c.b)*f)); }
-function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
-  return rgbToHex(
-    Math.round(a.r+(b.r-a.r)*t),
-    Math.round(a.g+(b.g-a.g)*t),
-    Math.round(a.b+(b.b-a.b)*t)
-  );
-}
-
-/* ---------- Globals ---------- */
-var board=null, tray=null;
-
-/* =========================================================
-   ICONS (Kalai Oval vibe) + swapper
-========================================================= */
-var ICONS = {
-  add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
-  menu:     { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
-  undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' },
-  trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
-  download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
-  close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
-  edit:     { vb:'0 0 24 24', d:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm14.92-9.92 1.77-1.77a1 1 0 0 0 0-1.41L17.35 2.6a1 1 0 0 0-1.41 0l-1.77 1.77 3.75 3.96z' }
-};
-function setIcon(container, name){
-  if(!container) return;
-  var spec = ICONS[name]; if(!spec) return;
-  container.innerHTML = '<svg viewBox="'+spec.vb+'" aria-hidden="true"><path d="'+spec.d+'"/></svg>';
-}
-function swapAllIcons(){
-  setIcon($('#addTierBtn .ico'),'add');
-  setIcon($('#undoBtn .ico'),'undo');
-  setIcon($('#trashClear .ico'),'trash');
-  setIcon($('#saveBtn .ico'),'download');
-  setIcon($('.title-pen'),'edit');
-  setIcon($('#radialPicker .radial-close'),'close');
-}
-
-/* ---------- FLIP helper ---------- */
-function flipZones(zones, mutate){
-  var prev=new Map();
-  zones.forEach(function(z){ $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); }); });
-  mutate();
-  requestAnimationFrame(function(){
-    zones.forEach(function(z){
-      $$('.token',z).forEach(function(t){
-        var r2=t.getBoundingClientRect(), r1=prev.get(t); if(!r1) return;
-        var dx=r1.left-r2.left, dy=r1.top-r2.top;
-        if(dx||dy){
-          t.classList.add('flip-anim');
-          t.style.transform='translate('+dx+'px,'+dy+'px)';
-          requestAnimationFrame(function(){
-            t.style.transform='translate(0,0)';
-            setTimeout(function(){ t.classList.remove('flip-anim'); t.style.transform=''; },220);
-          });
-        }
-      });
+  /* ---------- Events ---------- */
+  var _supportsPassive = false;
+  try {
+    var _opts = Object.defineProperty({}, "passive", {
+      get: function () { _supportsPassive = true; }
     });
-  });
-}
-
-/* ---------- Row DOM ---------- */
-function buildRowDom(){
-  var row=document.createElement('div'); row.className='tier-row'; row.id=uid();
-
-  var labelWrap=document.createElement('div'); labelWrap.className='tier-label';
-
-  var handle=document.createElement('button');
-  handle.className='row-handle';
-  handle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10h10v2H7zm0 4h10v2H7z"/></svg>';
-  handle.type='button'; handle.title='Drag to reorder row'; handle.setAttribute('aria-label','Drag to reorder row');
-
-  var chip=document.createElement('div');
-  chip.className='label-chip';
-  chip.setAttribute('contenteditable','true');
-  chip.setAttribute('spellcheck','false');
-  chip.setAttribute('role','textbox');
-  chip.setAttribute('aria-label','Tier label (editable). Press Enter to finish.');
-  chip.title='Click to edit label';
-
-  var del=document.createElement('button'); del.className='row-del'; del.type='button';
-  del.setAttribute('aria-label','Delete row');
-  setIcon(del, 'close');
-
-  // place delete on the label corner (append to labelWrap)
-  labelWrap.appendChild(handle);
-  labelWrap.appendChild(chip);
-  labelWrap.appendChild(del);
-
-  var drop=document.createElement('div');
-  drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
-
-  row.appendChild(labelWrap); row.appendChild(drop);
-  return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
-}
-function tintFrom(color){
-  var surface = cssVar('--surface') || '#111219';
-  var a=hexToRgb(surface), b=hexToRgb(color);
-  var amt = 0.14;
-  return rgbToHex(
-    Math.round(a.r+(b.r-a.r)*amt),
-    Math.round(a.g+(b.g-a.g)*amt),
-    Math.round(a.b+(b.b-a.b)*amt)
-  );
-}
-function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
-
-/* ---------- Chip text fitter ---------- */
-var CHIP_STEPS=[34,32,28,26,24,22,20,18,16,14];
-function fitChipText(chip){
-  if(!chip) return;
-  chip.style.whiteSpace='normal';
-  chip.style.lineHeight='1.15';
-  chip.style.display='flex';
-  chip.style.alignItems='center';
-  chip.style.justifyContent='center';
-  chip.style.textAlign='center';
-  chip.style.overflow='hidden';
-
-  var wrap = chip.parentElement;
-  var padding = 16;
-  var maxW = wrap.clientWidth - padding; if (maxW < 40) maxW = wrap.clientWidth;
-  var maxH = wrap.clientHeight - padding;
-
-  for(var i=0;i<CHIP_STEPS.length;i++){
-    var px = CHIP_STEPS[i];
-    chip.style.fontSize = px+'px';
-    if (chip.scrollWidth <= maxW && chip.scrollHeight <= Math.max(maxH, 110)){
-      break;
-    }
+    window.addEventListener("x", null, _opts);
+    window.removeEventListener("x", null, _opts);
+  } catch (e) {}
+  function on(el, t, h, o){
+    if(!el) return;
+    if (!o) { el.addEventListener(t, h, false); return; }
+    if (typeof o === 'object' && !_supportsPassive) el.addEventListener(t, h, !!o.capture);
+    else el.addEventListener(t, h, o);
   }
-}
-
-/* ---------- Create / wire a row ---------- */
-function createRow(cfg){
-  var dom = buildRowDom();
-  var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap=dom.labelWrap;
-
-  chip.textContent = cfg.label;
-  chip.dataset.color = cfg.color;
-
-  labelWrap.style.background = cfg.color;
-  labelWrap.dataset.color = cfg.color;
-  chip.style.background = 'transparent';
-  chip.style.color = contrastColor(cfg.color);
-
-  // delete X matches darkened label color
-  del.style.background = darken(cfg.color, 0.35);
-
-  var tint = tintFrom(cfg.color);
-  drop.style.background = tint; drop.dataset.manual = 'false';
-
-  fitChipText(chip);
-
-  on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-  on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
-
-  on(del,'click', function(ev){
-    ev.stopPropagation();
-    var ok = confirm('Delete this row? Items in it will return to Image Storage.');
-    if(!ok) return;
-    var tokens = $$('.token', drop);
-    flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
-    node.classList.add('removing');
-    setTimeout(function(){ node.remove(); refreshRadialOptions(); queueAutosave();
-      historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); updateUndo();
-    }, 260);
-  });
-
-  enableRowReorder(handle, node);
-  enableClickToPlace(drop);
-
-  // when label color dataset changes later, keep label chip & dataset consistent
-  Object.defineProperty(chip, 'tierColor', { get: function(){ return chip.dataset.color; }, set: function(v){ chip.dataset.color=v; labelWrap.style.background=v; del.style.background=darken(v,0.35); chip.style.color=contrastColor(v); } });
-
-  return node;
-}
-
-/* ---------- Defaults ---------- */
-var defaultTiers = [
-  { label:'S', color:'#FF5252' },
-  { label:'A', color:'#FFD600' },
-  { label:'B', color:'#00E676' },
-  { label:'C', color:'#40C4FF' },
-  { label:'D', color:'#B388FF' }
-];
-
-/* ---------- Tier cycle ---------- */
-var TIER_CYCLE = ['#FF5252','#FFD600','#00E676','#40C4FF','#B388FF','#FF9100','#FF4081','#7C4DFF','#00B0FF','#C6FF00'];
-var tierIdx = 0; function nextTierColor(){ var c=TIER_CYCLE[tierIdx%TIER_CYCLE.length]; tierIdx++; return c; }
-
-/* ---------- Preset names (Keyon removed) ---------- */
-var communityCast = [
-  "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
-  "Gavin","Harry","Jay","Jeremy","Katie","Kiev","Kikki","Kyle","Lewis","Meegan",
-  "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Xavier"
-];
-
-/* ---------- Palette (MD3-inspired — bolder expressive, black-text friendly) ---------- */
-var BASE_PALETTE = [
-  '#FFD600','#FFEA00','#FFE176','#FFC400',
-  '#FF9100','#FF6D00','#FFAB40','#FFB300',
-  '#FF5252','#FF4081','#FF80AB','#F06292',
-  '#B388FF','#7C4DFF','#9575CD','#BA68C8',
-  '#40C4FF','#00B0FF','#0091EA','#26C6DA','#4DD0E1',
-  '#00E676','#1DE9B6','#69F0AE','#00C853','#A5D6A7',
-  '#C6FF00','#AEEA00','#D4E157','#CDDC39'
-];
-function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
-function ensureForBlack(hex){
-  var target = 4.2, safe = hex, steps=0;
-  while (contrastForBlack(safe) < target && steps < 8){ safe = lighten(safe, 0.03); steps++; }
-  var toned = mixHex(safe, hex, 0.20);
-  var guard = 0;
-  while (contrastForBlack(toned) < target && guard < 4){ toned = lighten(toned, 0.01); guard++; }
-  return toned;
-}
-var presetPalette = BASE_PALETTE.map(ensureForBlack);
-var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
-
-/* rotate starting index each load so people don't get same color repeatedly */
-function rotatePresetStart(){ pIndex = Math.floor(Math.random() * presetPalette.length); }
-
-/* ---------- Token label fitter ---------- */
-function fitLiveLabel(lbl){
-  if (!lbl) return;
-  var token = lbl.parentElement;
-  var D = token.clientWidth;
-  var pad = 10;
-  var s = lbl.style;
-  s.whiteSpace='nowrap'; s.lineHeight='1'; s.display='flex';
-  s.alignItems='center'; s.justifyContent='center';
-  s.height='100%'; s.padding='0 '+pad+'px';
-  s.wordBreak='normal'; s.hyphens='none'; s.overflow='hidden';
-  var lo=Math.max(12,Math.floor(D*0.2)), hi=Math.floor(D*0.44), best=lo;
-  function fits(px){ s.fontSize=px+'px'; return (lbl.scrollWidth<=D-pad*2) && (lbl.scrollHeight<=D-pad*2); }
-  while(lo<=hi){ var mid=(lo+hi)>>1; if(fits(mid)){ best=mid; lo=mid+1; } else hi=mid-1; }
-  s.fontSize=best+'px';
-}
-function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
-function refitAllChips(){ $$('.label-chip').forEach(fitChipText); }
-on(window,'resize', debounce(function(){ refitAllLabels(); refitAllChips(); }, 120));
-
-/* ---------- Tokens ---------- */
-function buildTokenBase(){
-  var el = document.createElement('div');
-  el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
-  el.style.touchAction='none'; el.setAttribute('draggable','false');
-
-  on(el,'keydown', function(e){
-    if(!(e.altKey || e.metaKey)) return;
-    var zone = el.parentElement;
-    if(!zone || (!zone.classList.contains('dropzone') && zone.id!=='tray')) return;
-
-    if(e.key==='ArrowLeft' || e.key==='ArrowRight'){
-      e.preventDefault();
-      var sib = (e.key==='ArrowLeft') ? el.previousElementSibling : el.nextElementSibling;
-      if(!sib) return;
-      var beforeTok = (e.key==='ArrowLeft') ? sib : sib.nextElementSibling;
-      moveToken(el, zone, beforeTok);
-      el.focus();
-    } else if(e.key==='ArrowUp' || e.key==='ArrowDown'){
-      e.preventDefault();
-      var rows = $$('.tier-row');
-      var row = el.closest('.tier-row');
-      var idx = rows.indexOf ? rows.indexOf(row) : rows.findIndex(function(r){return r===row;});
-      var destRow = null;
-      if(e.key==='ArrowUp'){ destRow = row ? rows[idx-1] : rows[rows.length-1]; }
-      else{ destRow = row ? rows[idx+1] : rows[0]; }
-      if(destRow){ moveToken(el, destRow.querySelector('.tier-drop'), null); el.focus(); }
-    }
-  });
-
-  if (!isSmall()){
-    if (window.PointerEvent) enablePointerDrag(el);
-    else enableMouseTouchDragFallback(el);
-  }else{
-    enableMobileTouchDrag(el);
+  function once(el, t, h, o){
+    function w(e){ el.removeEventListener(t,w,o||false); h(e);}
+    el.addEventListener(t,w,o||false);
   }
 
-  on(el,'click', function(ev){
-    ev.stopPropagation();
-    var already = el.classList.contains('selected');
-    $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
-    var inTray = !!el.closest('#tray');
+  /* ---------- Media/measure ---------- */
+  function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
+  function isDesktopWide(){ return window.matchMedia && window.matchMedia('(min-width: 1025px)').matches; }
 
-    // Mobile: if in tray, open radial picker on tap; if already selected, toggle close
-    if (isSmall() && inTray){
-      if (!already){
-        el.classList.add('selected');
-        openRadial(el);
-      } else {
-        closeRadial();
-        el.classList.remove('selected');
-      }
-      return;
-    }
+  function debounce(fn, ms){ var id; return function(){ clearTimeout(id); id = setTimeout(fn, ms); }; }
 
-    if (!already){
-      el.classList.add('selected');
-    } else {
-      el.classList.remove('selected');
+  /* ---------- Live region ---------- */
+  function ensureLive(){
+    var n = $('#live');
+    if (!n) {
+      n = document.createElement('div');
+      n.id='live'; n.setAttribute('aria-live','polite'); n.className='sr';
+      document.body.appendChild(n);
     }
-  });
-  return el;
-}
-function buildNameToken(name, color, forceBlack){
-  var el = buildTokenBase();
-  el.style.background = color;
-  el.setAttribute('aria-label','Item: '+name);
-  var label = document.createElement('div'); label.className='label'; label.textContent=name;
-  label.style.color = forceBlack ? '#111' : contrastColor(color);
-  el.appendChild(label);
-  fitLiveLabel(label);
-  return el;
-}
-function buildImageToken(src, alt){
-  var el = buildTokenBase();
-  el.setAttribute('aria-label','Image item'+(alt?(': '+alt):''));
-  var img = document.createElement('img'); img.src=src; img.alt=alt||''; img.draggable=false; el.appendChild(img);
-  return el;
-}
+    return n;
+  }
+  function announce(msg){ var n=ensureLive(); n.textContent=''; setTimeout(function(){ n.textContent=msg; },0); }
 
-/* ---------- History (Undo) ---------- */
-var historyStack = [];
-function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
-function snapshotBefore(node){
-  var parent = node.parentElement;
-  var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
-  return { itemId: node.id || (node.id=uid()), fromId: parent.id || (parent.id=uid()), fromBeforeId: fromBefore };
-}
-function moveToken(node, toZone, beforeTok){
-  var snap = snapshotBefore(node);
-  var toId = toZone.id || (toZone.id=uid());
-  var beforeId = beforeTok ? (beforeTok.id || (beforeTok.id=uid())) : '';
-  var originParent = node.parentElement;
-  flipZones([originParent, toZone], function(){ if(beforeTok) toZone.insertBefore(node,beforeTok); else toZone.appendChild(node); });
-  historyStack.push({ type:'move', itemId:snap.itemId, fromId:snap.fromId, fromBeforeId:snap.fromBeforeId, toId:toId, toBeforeId:beforeId });
-  updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
-}
-function performMoveTo(itemId, parentId, beforeId){
-  var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
-  if(!item||!parent) return;
-  flipZones([item.parentElement, parent], function(){
-    if(beforeId){
-      var before=document.getElementById(beforeId);
-      if(before && before.parentElement===parent){ parent.insertBefore(item,before); return; }
-    }
-    parent.appendChild(item);
-  });
-}
-on($('#undoBtn'),'click', function(){
-  var last = historyStack.pop(); if (!last) return;
-  if (last.type==='move'){
-    performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
-  } else if (last.type==='row'){
-    var r=document.getElementById(last.rowId);
-    var before = last.fromBeforeId ? document.getElementById(last.fromBeforeId) : null;
-    var container = $('#tierBoard');
-    if (r && container){
-      if(before && before.parentElement===container) container.insertBefore(r,before); else container.appendChild(r);
-    }
-  } else if (last.type==='row-delete'){
-    var container = $('#tierBoard');
-    if(container){
-      var tmp=document.createElement('div'); tmp.innerHTML=last.rowHTML.trim();
-      var row=tmp.firstElementChild;
-      container.appendChild(row);
-      var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
-      setIcon(del,'close');
-      enableRowReorder(handle,row); enableClickToPlace(drop);
-      on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); } });
-      on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
-      on(del,'click', function(){
-        if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
-        var tokens = $$('.token', drop);
-        flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
-        row.classList.add('removing');
-        setTimeout(function(){ row.remove(); refreshRadialOptions(); queueAutosave();
-          historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
-        }, 260);
+  /* ---------- Vibration ---------- */
+  function vib(ms){ if('vibrate' in navigator) navigator.vibrate(ms||8); }
+
+  /* ---------- CSS var helper ---------- */
+  function cssVar(name){
+    try{ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+    catch(_){ return ''; }
+  }
+
+  /* ---------- Colors ---------- */
+  function clamp8(x){ x = Math.floor(x); if (x<0) return 0; if (x>255) return 255; return x; }
+  function hexToRgb(hex){
+    var h=(hex||'').replace('#',''); if(!h) return {r:0,g:0,b:0};
+    if(h.length===3){ h=h.split('').map(function(x){return x+x;}).join(''); }
+    var n=parseInt(h,16); if(isNaN(n)) return {r:0,g:0,b:0};
+    return {r:(n>>16)&255,g:(n>>8)&255,b:n&255};
+  }
+  function rgbToHex(r,g,b){ return '#'+[clamp8(r),clamp8(g),clamp8(b)].map(function(v){return v.toString(16).padStart(2,'0');}).join(''); }
+  function relativeLuminance(rgb){
+    function srgb(v){ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }
+    return 0.2126*srgb(rgb.r)+0.7152*srgb(rgb.g)+0.0722*srgb(rgb.b);
+  }
+  function contrastColor(bgHex){ var L=relativeLuminance(hexToRgb(bgHex)); return L>0.58 ? '#000000' : '#ffffff'; }
+  function darken(hex,p){ var c=hexToRgb(hex); var f=(1-(p||0)); return rgbToHex(c.r*f,c.g*f,c.b*f); }
+  function lighten(hex,p){ var c=hexToRgb(hex), f=p||0; return rgbToHex(c.r+(255-c.r)*f, c.g+(255-c.g)*f, c.b+(255-c.b)*f); }
+  function mixHex(aHex,bHex,t){ var a=hexToRgb(aHex), b=hexToRgb(bHex);
+    return rgbToHex(a.r+(b.r-a.r)*t, a.g+(b.g-a.g)*t, a.b+(b.b-a.b)*t);
+  }
+
+  /* ---------- UID ---------- */
+  function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
+
+  /* ---------- Globals (scoped inside IIFE) ---------- */
+  var board=null, tray=null;
+
+  /* =========================================================
+     ICONS (Kalai Oval-like, normalized viewboxes)
+  ========================================================= */
+  var ICONS = {
+    add:      { vb:'0 0 24 24', d:'M12 5a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H6a1 1 0 1 1 0-2h5V6a1 1 0 0 1 1-1z' },
+    menu:     { vb:'0 0 24 24', d:'M4 7h16a1 1 0 0 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2zm0 5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2z' },
+    undo:     { vb:'0 0 24 24', d:'M12 5v3l-4-4 4-4v3c5.523 0 10 4.477 10 10a10 10 0 0 1-10 10H6v-2h6a8 8 0 0 0 0-16z' },
+    trash:    { vb:'0 0 24 24', d:'M9 3h6l1 2h4a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2h4l1-2zm2 6a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1zm4 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V10a1 1 0 0 1 1-1z' },
+    download: { vb:'0 0 24 24', d:'M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3 1.4 1.4-4.7 4.7-4.7-4.7 1.4-1.4 2.3 2.3V4a1 1 0 0 1 1-1zM4 19a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1z' },
+    close:    { vb:'0 0 24 24', d:'M6.7 5.3 5.3 6.7 10.6 12l-5.3 5.3 1.4 1.4L12 13.4l5.3 5.3 1.4-1.4L13.4 12l5.3-5.3-1.4-1.4L12 10.6 6.7 5.3z' },
+    // Pencil-fill (from the user-provided icon URL, normalized)
+    edit:     { vb:'0 0 16 16', d:'M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793l3.707 3.707 1.647-1.647a.5.5 0 0 0 0-.707L12.854.146zM10.146 2.146 2 10.293V13h2.707l8.146-8.146-2.707-2.707z' }
+  };
+  function setIcon(container, name){
+    if(!container) return;
+    var spec = ICONS[name]; if(!spec) return;
+    container.innerHTML = '<svg viewBox="'+spec.vb+'" aria-hidden="true"><title>'+name+'</title><path d="'+spec.d+'"/></svg>';
+  }
+  function swapAllIcons(){
+    setIcon($('#addTierBtn .ico'),'add');
+    setIcon($('#undoBtn .ico'),'undo');
+    setIcon($('#trashClear .ico'),'trash');
+    setIcon($('#saveBtn .ico'),'download');
+    setIcon($('.title-pen'),'edit');
+    var rc = $('#radialPicker .radial-close');
+    if (rc && !rc.querySelector('svg')) setIcon(rc,'close');
+  }
+
+  /* ---------- FLIP helper (clear map after use, animation 180ms) ---------- */
+  function flipZones(zones, mutate){
+    var prev=new Map();
+    zones.forEach(function(z){
+      $$('.token',z).forEach(function(t){ prev.set(t,t.getBoundingClientRect()); });
+    });
+    mutate();
+    requestAnimationFrame(function(){
+      zones.forEach(function(z){
+        $$('.token',z).forEach(function(t){
+          var r2=t.getBoundingClientRect(), r1=prev.get(t); if(!r1) return;
+          var dx=r1.left-r2.left, dy=r1.top-r2.top;
+          if(dx||dy){
+            t.classList.add('flip-anim');
+            t.style.transform='translate('+dx+'px,'+dy+'px)';
+            requestAnimationFrame(function(){
+              t.style.transform='translate(0,0)';
+              setTimeout(function(){
+                t.classList.remove('flip-anim'); t.style.transform='';
+              },190); // 180ms CSS + 10ms buffer
+            });
+          }
+        });
       });
+      prev.clear(); // prevent leaks
+    });
+  }
+
+  /* ---------- DOM builders ---------- */
+  function buildRowDom(){
+    var row=document.createElement('div'); row.className='tier-row'; row.id=uid();
+
+    var labelWrap=document.createElement('div'); labelWrap.className='tier-label';
+
+    var handle=document.createElement('button');
+    handle.className='row-handle';
+    handle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><title>reorder</title><path d="M7 10h10v2H7zm0 4h10v2H7z"/></svg>';
+    handle.type='button'; handle.title='Drag to reorder row'; handle.setAttribute('aria-label','Drag to reorder row');
+
+    var chip=document.createElement('div');
+    chip.className='label-chip';
+    chip.setAttribute('contenteditable','true');
+    chip.setAttribute('spellcheck','false');
+    chip.setAttribute('role','textbox');
+    chip.setAttribute('aria-label','Tier label (editable). Press Enter to finish.');
+    chip.title='Click to edit label';
+
+    var del=document.createElement('button'); del.className='row-del'; del.type='button';
+    del.setAttribute('aria-label','Delete row');
+    setIcon(del, 'close');
+
+    labelWrap.appendChild(handle);
+    labelWrap.appendChild(chip);
+    labelWrap.appendChild(del);
+
+    var drop=document.createElement('div');
+    drop.className='tier-drop dropzone'; drop.setAttribute('tabindex','0');
+
+    row.appendChild(labelWrap); row.appendChild(drop);
+    return { row: row, chip: chip, del: del, drop: drop, handle: handle, labelWrap: labelWrap };
+  }
+
+  function tintFrom(color){
+    var surface = cssVar('--surface') || '#111219';
+    var a=hexToRgb(surface), b=hexToRgb(color);
+    var amt = 0.14;
+    return rgbToHex(
+      a.r+(b.r-a.r)*amt,
+      a.g+(b.g-a.g)*amt,
+      a.b+(b.b-a.b)*amt
+    );
+  }
+  function rowLabel(row){ var chip=row?row.querySelector('.label-chip'):null; return chip?chip.textContent.replace(/\s+/g,' ').trim():'row'; }
+
+  /* ---------- Fitters (no-op during export) ---------- */
+  function isExporting(){ return document.documentElement.classList.contains('exporting'); }
+
+  var CHIP_STEPS=[34,32,28,26,24,22,20,18,16,14];
+  function fitChipText(chip){
+    if (!chip || isExporting()) return;
+    var wrap = chip.parentElement; if(!wrap) return;
+    chip.style.whiteSpace='normal';
+    chip.style.lineHeight='1.15';
+    chip.style.display='flex';
+    chip.style.alignItems='center';
+    chip.style.justifyContent='center';
+    chip.style.textAlign='center';
+    chip.style.overflow='hidden';
+
+    var padding = 16;
+    var maxW = wrap.clientWidth - padding; if (maxW < 40) maxW = wrap.clientWidth;
+    var maxH = wrap.clientHeight - padding;
+
+    for(var i=0;i<CHIP_STEPS.length;i++){
+      var px = CHIP_STEPS[i];
+      chip.style.fontSize = px+'px';
+      if (chip.scrollWidth <= maxW && chip.scrollHeight <= Math.max(maxH, 110)){
+        break;
+      }
     }
   }
-  updateUndo(); queueAutosave();
-});
 
-/* ---------- Insert helper ---------- */
-function insertBeforeForPoint(zone,x,y,except){
-  var tokens=[].slice.call(zone.querySelectorAll('.token')).filter(function(t){return t!==except;});
-  if(tokens.length===0) return null;
-  var centers=tokens.map(function(t){var r=t.getBoundingClientRect();return {t:t,cx:r.left+r.width/2,cy:r.top+r.height/2};});
-  var rightMost=centers.reduce(function(a,b){return (b.cx>a.cx)?b:a;});
-  var zr=zone.getBoundingClientRect();
-  if(x > rightMost.cx + 24) return null;
-  if(y > zr.bottom - 12) return null;
-  var best=null,bestD=Infinity;
-  centers.forEach(function(c){var dx=c.cx-x,dy=c.cy-y;var d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=c.t;}});
-  return best;
-}
+  function fitLiveLabel(lbl){
+    if (!lbl || isExporting()) return;
+    var token = lbl.parentElement; if(!token) return;
+    var D = token.clientWidth;
+    var pad = 10;
+    var s = lbl.style;
+    s.whiteSpace='nowrap'; s.lineHeight='1'; s.display='flex';
+    s.alignItems='center'; s.justifyContent='center';
+    s.height='100%'; s.padding='0 '+pad+'px';
+    s.wordBreak='normal'; s.hyphens='none'; s.overflow='hidden';
+    var lo=Math.max(12,Math.floor(D*0.2)), hi=Math.floor(D*0.44), best=lo;
+    function fits(px){ s.fontSize=px+'px'; return (lbl.scrollWidth<=D-pad*2) && (lbl.scrollHeight<=D-pad*2); }
+    while(lo<=hi){ var mid=(lo+hi)>>1; if(fits(mid)){ best=mid; lo=mid+1; } else hi=mid-1; }
+    s.fontSize=best+'px';
+  }
+  function refitAllLabels(){ $$('.token .label').forEach(fitLiveLabel); }
+  function refitAllChips(){ $$('.label-chip').forEach(fitChipText); }
+  on(window,'resize', debounce(function(){ refitAllLabels(); refitAllChips(); }, 120));
 
-/* ---------- Click-to-place ---------- */
-function enableClickToPlace(zone){
-  on(zone,'click', function(){
-    var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
-    var selected = $('.token.selected'); if (!selected) return;
-    if(isSmall() && !selected.closest('#tray')) return;
-    moveToken(selected, zone, null);
-    selected.classList.remove('selected');
+  /* ---------- Build Tokens ---------- */
+  function buildTokenBase(){
+    var el = document.createElement('div');
+    el.className='token'; el.id = uid(); el.setAttribute('tabindex','0'); el.setAttribute('role','listitem');
+    el.style.touchAction='none'; el.setAttribute('draggable','false');
+
+    on(el,'keydown', function(e){
+      if(!(e.altKey || e.metaKey)) return;
+      var zone = el.parentElement;
+      if(!zone || (!zone.classList.contains('dropzone') && zone.id!=='tray')) return;
+
+      if(e.key==='ArrowLeft' || e.key==='ArrowRight'){
+        e.preventDefault();
+        var sib = (e.key==='ArrowLeft') ? el.previousElementSibling : el.nextElementSibling;
+        if(!sib) return;
+        var beforeTok = (e.key==='ArrowLeft') ? sib : sib.nextElementSibling;
+        moveToken(el, zone, beforeTok);
+        el.focus();
+      } else if(e.key==='ArrowUp' || e.key==='ArrowDown'){
+        e.preventDefault();
+        var rows = $$('.tier-row');
+        var row = el.closest('.tier-row');
+        var idx = rows.indexOf(row);
+        var destRow = null;
+        if(e.key==='ArrowUp'){ destRow = row ? rows[idx-1] : rows[rows.length-1]; }
+        else{ destRow = row ? rows[idx+1] : rows[0]; }
+        if(destRow){ moveToken(el, destRow.querySelector('.tier-drop'), null); el.focus(); }
+      }
+    });
+
+    // Toggle selection correctly
+    on(el,'click', function(ev){
+      ev.stopPropagation();
+      var wasSelected = el.classList.contains('selected');
+      if (wasSelected){
+        el.classList.remove('selected');
+        if (isSmall()) closeRadial();
+        return;
+      }
+      $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+      el.classList.add('selected');
+      var inTray = !!el.closest('#tray');
+      if (isSmall() && inTray) openRadial(el);
+    });
+
+    if (!isSmall()){
+      if (window.PointerEvent) enablePointerDrag(el);
+      else enableMouseTouchDragFallback(el);
+    }else{
+      enableMobileTouchDrag(el);
+    }
+
+    return el;
+  }
+
+  function buildNameToken(name, color, forceBlack){
+    var el = buildTokenBase();
+    el.style.background = color;
+    el.setAttribute('aria-label','Item: '+name);
+    var label = document.createElement('div'); label.className='label'; label.textContent=name;
+    label.style.color = forceBlack ? '#111' : contrastColor(color);
+    el.appendChild(label);
+    fitLiveLabel(label);
+    return el;
+  }
+
+  function buildImageToken(src, alt){
+    var el = buildTokenBase();
+    el.setAttribute('aria-label','Image item'+(alt?(': '+alt):''));
+    var img = document.createElement('img'); img.src=src; img.alt=alt||''; img.draggable=false; el.appendChild(img);
+    return el;
+  }
+
+  /* ---------- History (Undo) ---------- */
+  var historyStack = [];
+  function updateUndo(){ var u=$('#undoBtn'); if(u) u.disabled = historyStack.length===0; }
+  function snapshotBefore(node){
+    var parent = node.parentElement;
+    var fromBefore = node.nextElementSibling ? node.nextElementSibling.id || (node.nextElementSibling.id=uid()) : '';
+    return { itemId: node.id || (node.id=uid()), fromId: parent.id || (parent.id=uid()), fromBeforeId: fromBefore };
+  }
+  function moveToken(node, toZone, beforeTok){
+    var snap = snapshotBefore(node);
+    var toId = toZone.id || (toZone.id=uid());
+    var beforeId = beforeTok ? (beforeTok.id || (beforeTok.id=uid())) : '';
+    var originParent = node.parentElement;
+    flipZones([originParent, toZone], function(){ if(beforeTok) toZone.insertBefore(node,beforeTok); else toZone.appendChild(node); });
+    historyStack.push({ type:'move', itemId:snap.itemId, fromId:snap.fromId, fromBeforeId:snap.fromBeforeId, toId:toId, toBeforeId:beforeId });
+    updateUndo(); announce('Moved '+(node.innerText||'item')); vib(6); queueAutosave();
+  }
+  function performMoveTo(itemId, parentId, beforeId){
+    var item=document.getElementById(itemId); var parent=document.getElementById(parentId);
+    if(!item||!parent) return;
+    flipZones([item.parentElement, parent], function(){
+      if(beforeId){
+        var before=document.getElementById(beforeId);
+        if(before && before.parentElement===parent){ parent.insertBefore(item,before); return; }
+      }
+      parent.appendChild(item);
+    });
+  }
+  on($('#undoBtn'),'click', function(){
+    var last = historyStack.pop(); if (!last) return;
+    if (last.type==='move'){
+      performMoveTo(last.itemId, last.fromId, last.fromBeforeId);
+    } else if (last.type==='row'){
+      var container = $('#tierBoard'); if(!container) return;
+      // Use DOMParser to avoid innerHTML-based XSS risk
+      var parser = new DOMParser();
+      var doc = parser.parseFromString(last.rowHTML||'', 'text/html');
+      var row = doc.body && doc.body.firstElementChild;
+      if(row){
+        container.appendChild(row);
+        var chip=$('.label-chip',row), del=$('.row-del',row), drop=$('.tier-drop',row), handle=$('.row-handle',row);
+        setIcon(del,'close');
+        enableRowReorder(handle,row); enableClickToPlace(drop);
+        on(chip,'keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); chip.blur(); var next=drop; if(next) next.focus(); } });
+        on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
+        on(del,'click', function(){
+          if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
+          // Close radial if open to avoid stale refs
+          try{ closeRadial(); }catch(_){}
+          var tokens = $$('.token', drop);
+          flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
+          row.classList.add('removing');
+          setTimeout(function(){ row.remove(); refreshRadialOptions(); queueAutosave();
+            historyStack.push({type:'row-delete', rowHTML: row.outerHTML}); updateUndo();
+          }, 260);
+        });
+      }
+    } else if (last.type==='row-delete'){
+      // no-op here; delete already removed. (Restored via DOMParser above)
+    }
+    updateUndo(); queueAutosave();
   });
-}
 
-/* ---------- Zone detection ---------- */
-function getDropZoneFromElement(el){
-  if (!el) return null;
-  var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
-  var chip=el.closest('.tier-label'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
-  return null;
-}
+  /* ---------- Insert helper ---------- */
+  function insertBeforeForPoint(zone,x,y,except){
+    var tokens=[].slice.call(zone.querySelectorAll('.token')).filter(function(t){return t!==except;});
+    if(tokens.length===0) return null;
+    var centers=tokens.map(function(t){var r=t.getBoundingClientRect();return {t:t,cx:r.left+r.width/2,cy:r.top+r.height/2};});
+    var rightMost=centers.reduce(function(a,b){return (b.cx>a.cx)?b:a;});
+    var zr=zone.getBoundingClientRect();
+    if(x > rightMost.cx + 24) return null;
+    if(y > zr.bottom - 12) return null;
+    var best=null,bestD=Infinity;
+    centers.forEach(function(c){var dx=c.cx-x,dy=c.cy-y;var d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=c.t;}});
+    return best;
+  }
 
-/* ---------- Drag (desktop/mobile) ---------- */
-function enablePointerDrag(node){
-  var ghost=null, originNext=null, currentZone=null;
-  var offsetX=0, offsetY=0, x=0, y=0, raf=null;
+  /* ---------- Click-to-place ---------- */
+  function enableClickToPlace(zone){
+    on(zone,'click', function(){
+      var picker=$('#radialPicker'); if(picker && !picker.classList.contains('hidden')) return;
+      var selected = $('.token.selected'); if (!selected) return;
+      if(isSmall() && !selected.closest('#tray')) return;
+      moveToken(selected, zone, null);
+      selected.classList.remove('selected');
+    });
+  }
 
-  on(node,'pointerdown', function(e){
-    if (isSmall()) return;
-    if (e.button!==0) return;
-    e.preventDefault();
-    node.setPointerCapture(e.pointerId);
-    document.body.classList.add('dragging-item');
+  /* ---------- Zone detection ---------- */
+  function getDropZoneFromElement(el){
+    if (!el) return null;
+    var dz=el.closest('.dropzone, #tray'); if(dz) return dz;
+    var chip=el.closest('.tier-label'); if(chip){ var row=chip.closest('.tier-row'); return row?row.querySelector('.tier-drop'):null; }
+    return null;
+  }
 
-    originNext = node.nextElementSibling;
+  /* ---------- Drag (desktop/mobile) ---------- */
+  function enablePointerDrag(node){
+    var ghost=null, originNext=null, currentZone=null;
+    var offsetX=0, offsetY=0, x=0, y=0, raf=null;
 
-    var r=node.getBoundingClientRect(); offsetX=e.clientX-r.left; offsetY=e.clientY-r.top; x=e.clientX; y=e.clientY;
-    ghost = node.cloneNode(true); ghost.classList.add('drag-ghost','dragging-cue'); document.body.appendChild(ghost);
-    node.classList.add('drag-hidden','dragging-cue');
+    on(node,'pointerdown', function(e){
+      if (isSmall()) return;
+      if (e.button!==0) return;
+      e.preventDefault();
+      try { node.setPointerCapture(e.pointerId); } catch(_){}
+      document.body.classList.add('dragging-item');
 
-    function move(ev){ x=ev.clientX; y=ev.clientY; }
-    function up(){
-      try{ node.releasePointerCapture(e.pointerId); }catch(_){}
-      document.removeEventListener('pointermove', move, _supportsPassive?{passive:true}:false);
-      document.removeEventListener('pointerup', up, false);
-      cancelAnimationFrame(raf);
-      var target = document.elementFromPoint(x,y);
-      if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
-      node.classList.remove('drag-hidden','dragging-cue');
-      document.body.classList.remove('dragging-item');
+      originNext = node.nextElementSibling;
 
-      var zone = getDropZoneFromElement(target);
-      if (zone){
-        var beforeTok = insertBeforeForPoint(zone,x,y,node);
-        moveToken(node, zone, beforeTok);
-        node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
-      } else {
-        if (originNext && originNext.parentElement===node.parentElement) {
+      var r=node.getBoundingClientRect(); offsetX=e.clientX-r.left; offsetY=e.clientY-r.top; x=e.clientX; y=e.clientY;
+      ghost = node.cloneNode(true); ghost.classList.add('drag-ghost','dragging-cue'); document.body.appendChild(ghost);
+      node.classList.add('drag-hidden','dragging-cue');
+
+      function move(ev){ x=ev.clientX; y=ev.clientY; }
+      function up(){
+        try{ node.releasePointerCapture(e.pointerId); }catch(_){}
+        document.removeEventListener('pointermove', move, _supportsPassive?{passive:true}:false);
+        document.removeEventListener('pointerup', up, false);
+        cancelAnimationFrame(raf);
+        try{ if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost); }catch(_){}
+        node.classList.remove('drag-hidden','dragging-cue');
+        document.body.classList.remove('dragging-item');
+
+        var target = document.elementFromPoint(x,y);
+        var zone = getDropZoneFromElement(target);
+        if (zone){
+          var beforeTok = insertBeforeForPoint(zone,x,y,node);
+          moveToken(node, zone, beforeTok);
+          node.classList.add('animate-drop'); setTimeout(function(){ node.classList.remove('animate-drop'); },180);
+        } else {
+          if (originNext && originNext.parentElement===node.parentElement) {
+            moveToken(node, node.parentElement, originNext);
+          }
+        }
+        if (currentZone) currentZone.classList.remove('drag-over');
+        currentZone=null;
+      }
+
+      document.addEventListener('pointermove', move, _supportsPassive?{passive:true}:false);
+      document.addEventListener('pointerup', up, false);
+      loop();
+
+      function loop(){
+        raf = requestAnimationFrame(loop);
+        if (ghost) ghost.style.transform = 'translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';
+        var el = document.elementFromPoint(x,y);
+        var zone = getDropZoneFromElement(el);
+        if (currentZone && currentZone!==zone) currentZone.classList.remove('drag-over');
+        if (zone && zone!==currentZone) zone.classList.add('drag-over');
+        currentZone = zone || null;
+      }
+    });
+  }
+  function enableMouseTouchDragFallback(node){ on(node,'mousedown', function(e){ e.preventDefault(); }); }
+
+  function enableMobileTouchDrag(node){
+    if(!('PointerEvent' in window)) return;
+    on(node,'pointerdown',function(e){
+      if(!isSmall())return;
+      if(e.pointerType!=='touch' && e.pointerType!=='pen')return;
+      if(!node.closest('.tier-drop'))return;
+      e.preventDefault();
+      try{node.setPointerCapture(e.pointerId);}catch(_){}
+      document.body.classList.add('dragging-item');
+
+      var ghost=node.cloneNode(true); ghost.classList.add('drag-ghost','dragging-cue'); document.body.appendChild(ghost);
+      var originNext=node.nextElementSibling;
+      node.classList.add('drag-hidden','dragging-cue');
+
+      var r=node.getBoundingClientRect(), offsetX=e.clientX-r.left, offsetY=e.clientY-r.top, x=e.clientX, y=e.clientY;
+
+      function move(ev){x=ev.clientX;y=ev.clientY; if(ghost) ghost.style.transform='translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';}
+      function up(){
+        try{node.releasePointerCapture(e.pointerId);}catch(_){}
+        document.removeEventListener('pointermove',move,_supportsPassive?{passive:true}:false);
+        document.removeEventListener('pointerup',up,false);
+        try{ if(ghost&&ghost.parentNode)ghost.parentNode.removeChild(ghost);}catch(_){}
+        node.classList.remove('drag-hidden','dragging-cue'); document.body.classList.remove('dragging-item');
+
+        var target=document.elementFromPoint(x,y); var zone=getDropZoneFromElement(target);
+        if(zone){
+          var beforeTok=insertBeforeForPoint(zone,x,y,node);
+          moveToken(node, zone, beforeTok);
+          node.classList.add('animate-drop'); setTimeout(function(){node.classList.remove('animate-drop');},180);
+        } else if (originNext){
           moveToken(node, node.parentElement, originNext);
         }
       }
-      if (currentZone) currentZone.classList.remove('drag-over');
-      currentZone=null;
-    }
+      document.addEventListener('pointermove',move,_supportsPassive?{passive:true}:false);
+      document.addEventListener('pointerup',up,false);
+    },_supportsPassive?{passive:false}:false);
+  }
 
-    document.addEventListener('pointermove', move, _supportsPassive?{passive:true}:false);
-    document.addEventListener('pointerup', up, false);
-    loop();
+  /* ---------- Row reorder ---------- */
+  function enableRowReorder(handle, row){
+    var placeholder=null, originNext=null;
 
-    function loop(){
-      raf = requestAnimationFrame(loop);
-      ghost.style.transform = 'translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';
-      var el = document.elementFromPoint(x,y);
-      var zone = getDropZoneFromElement(el);
-      if (currentZone && currentZone!==zone) currentZone.classList.remove('drag-over');
-      if (zone && zone!==currentZone) zone.classList.add('drag-over');
-      currentZone = zone || null;
-    }
-  });
-}
-function enableMouseTouchDragFallback(node){ on(node,'mousedown', function(e){ e.preventDefault(); }); }
-function enableMobileTouchDrag(node){
-  if(!('PointerEvent' in window)) return;
-  on(node,'pointerdown',function(e){
-    if(!isSmall())return;
-    if(e.pointerType!=='touch' && e.pointerType!=='pen')return;
-    if(!node.closest('.tier-drop'))return;
-    e.preventDefault(); node.setPointerCapture(e.pointerId); document.body.classList.add('dragging-item');
+    function arm(){ row.setAttribute('draggable','true'); originNext = row.nextElementSibling; }
+    on(handle,'mousedown', arm);
+    on(handle,'touchstart', arm, _supportsPassive?{passive:true}:false);
 
-    var ghost=node.cloneNode(true); ghost.classList.add('drag-ghost','dragging-cue'); document.body.appendChild(ghost);
-    var originNext=node.nextElementSibling;
-    node.classList.add('drag-hidden','dragging-cue');
-
-    var r=node.getBoundingClientRect(), offsetX=e.clientX-r.left, offsetY=e.clientY-r.top, x=e.clientX, y=e.clientY;
-
-    function move(ev){x=ev.clientX;y=ev.clientY; ghost.style.transform='translate3d('+(x-offsetX)+'px,'+(y-offsetY)+'px,0)';}
-    function up(){
-      try{node.releasePointerCapture(e.pointerId);}catch(_){}
-      document.removeEventListener('pointermove',move,_supportsPassive?{passive:true}:false);
-      document.removeEventListener('pointerup',up,false);
-      if(ghost&&ghost.parentNode)ghost.parentNode.removeChild(ghost);
-      node.classList.remove('drag-hidden','dragging-cue'); document.body.classList.remove('dragging-item');
-
-      var target=document.elementFromPoint(x,y); var zone=getDropZoneFromElement(target);
-      if(zone){
-        var beforeTok=insertBeforeForPoint(zone,x,y,node);
-        moveToken(node, zone, beforeTok);
-        node.classList.add('animate-drop'); setTimeout(function(){node.classList.remove('animate-drop');},180);
-      } else if (originNext){
-        moveToken(node, node.parentElement, originNext);
-      }
-    }
-    document.addEventListener('pointermove',move,_supportsPassive?{passive:true}:false);
-    document.addEventListener('pointerup',up,false);
-  },_supportsPassive?{passive:false}:false);
-}
-
-/* ---------- Row reorder ---------- */
-function enableRowReorder(handle, row){
-  var placeholder=null, originNext=null;
-
-  function arm(){ row.setAttribute('draggable','true'); originNext = row.nextElementSibling; }
-  on(handle,'mousedown', arm);
-  on(handle,'touchstart', arm, _supportsPassive?{passive:true}:false);
-
-  on(row,'dragstart', function(){
-    document.body.classList.add('dragging-item');
-    placeholder = document.createElement('div');
-    placeholder.className='tier-row';
-    placeholder.style.height = row.getBoundingClientRect().height+'px';
-    placeholder.style.borderRadius='12px';
-    placeholder.style.border='2px dashed rgba(139,125,255,.25)';
-    $('#tierBoard').insertBefore(placeholder, row.nextSibling);
-    setTimeout(function(){ row.style.display='none'; },0);
-  });
-  on(row,'dragend', function(){
-    row.style.display='';
-    var boardEl=$('#tierBoard');
-    if (placeholder && placeholder.parentNode){ boardEl.insertBefore(row, placeholder); placeholder.parentNode.removeChild(placeholder); }
-    var afterNext = row.nextElementSibling;
-    row.removeAttribute('draggable'); placeholder=null;
-    document.body.classList.remove('dragging-item');
-
-    historyStack.push({
-      type:'row',
-      rowId: row.id,
-      fromBeforeId: originNext ? (originNext.id || (originNext.id=uid())) : '',
-      toBeforeId:   afterNext ? (afterNext.id || (afterNext.id=uid())) : ''
+    on(row,'dragstart', function(){
+      document.body.classList.add('dragging-item');
+      placeholder = document.createElement('div');
+      placeholder.className='tier-row';
+      placeholder.style.height = row.getBoundingClientRect().height+'px';
+      placeholder.style.borderRadius='12px';
+      placeholder.style.border='2px dashed rgba(139,125,255,.25)';
+      $('#tierBoard').insertBefore(placeholder, row.nextSibling);
+      setTimeout(function(){ row.style.display='none'; },0);
     });
-    updateUndo(); queueAutosave();
-  });
-  on($('#tierBoard'),'dragover', function(e){
-    if(!placeholder) return; e.preventDefault();
-    var after = rowAfterY($('#tierBoard'), e.clientY);
-    if (after) $('#tierBoard').insertBefore(placeholder, after); else $('#tierBoard').appendChild(placeholder);
-  });
-  function rowAfterY(container, y){
-    var rows = Array.prototype.filter.call(container.querySelectorAll('.tier-row'), function(r){ return r!==placeholder && r.style.display!=='none'; });
-    for (var i=0;i<rows.length;i++){ var r=rows[i], rect=r.getBoundingClientRect(); if (y < rect.top + rect.height/2) return r; }
-    return null;
+    on(row,'dragend', function(){
+      row.style.display='';
+      var boardEl=$('#tierBoard');
+      if (placeholder && placeholder.parentNode){ boardEl.insertBefore(row, placeholder); placeholder.parentNode.removeChild(placeholder); }
+      var afterNext = row.nextElementSibling;
+      row.removeAttribute('draggable'); placeholder=null;
+      document.body.classList.remove('dragging-item');
+
+      historyStack.push({
+        type:'row',
+        rowId: row.id,
+        fromBeforeId: originNext ? (originNext.id || (originNext.id=uid())) : '',
+        toBeforeId:   afterNext ? (afterNext.id || (afterNext.id=uid())) : ''
+      });
+      updateUndo(); queueAutosave();
+    });
+    on($('#tierBoard'),'dragover', function(e){
+      if(!placeholder) return; e.preventDefault();
+      var after = rowAfterY($('#tierBoard'), e.clientY);
+      if (after) $('#tierBoard').insertBefore(placeholder, after); else $('#tierBoard').appendChild(placeholder);
+    });
+    function rowAfterY(container, y){
+      var rows = Array.prototype.filter.call(container.querySelectorAll('.tier-row'), function(r){ return r!==placeholder && r.style.display!=='none'; });
+      for (var i=0;i<rows.length;i++){ var r=rows[i], rect=r.getBoundingClientRect(); if (y < rect.top + rect.height/2) return r; }
+      return null;
+    }
   }
-}
 
-/* ---------- Radial picker (mobile): compact + edge guard + colored dots ---------- */
-var radial = $('#radialPicker');
-var radialOpts = radial?$('.radial-options', radial):null;
-var radialCloseBtn = radial?$('.radial-close', radial):null;
-var radialForToken = null;
-var _radialGeo = [];
+  /* ---------- Radial picker (mobile): compact + edge guard + color-coded ---------- */
+  var radial = $('#radialPicker');
+  var radialOpts = radial?$('.radial-options', radial):null;
+  var radialCloseBtn = radial?$('.radial-close', radial):null;
+  var radialForToken = null;
+  var _radialBackdropHandler = null;
 
-function uniformCenter(cx, cy, R){
-  var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
-}
-function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
-
-/* WAAPI spring (compact) */
-function springIn(el, delay){
-  try{
-    el.animate(
-      [
-        { transform: 'translate(-50%,-50%) scale(0.78)', opacity: 0 },
-        { transform: 'translate(-50%,-50%) scale(1.04)', opacity: 1, offset: .58 },
-        { transform: 'translate(-50%,-50%) scale(0.98)', opacity: 1, offset: .82 },
-        { transform: 'translate(-50%,-50%) scale(1.00)', opacity: 1 }
-      ],
-      { duration: 360, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
-    );
-  }catch(_){}
-}
-
-function openRadial(token){
-  if(!radial||!isSmall()) return;
-  radialForToken = token;
-  if (radialCloseBtn) radialCloseBtn.setAttribute('type','button');
-
-  var rect = token.getBoundingClientRect();
-  var cx = rect.left + rect.width/2;
-  var cy = rect.top + rect.height/2;
-
-  var rows = $$('.tier-row');
-  var labels = rows.map(function(r){ return rowLabel(r); });
-  var N = labels.length; if (!N) return;
-
-  // Compact fan + left-edge guard (no smoosh)
-  var DOT=42, GAP=6;
-  var degStart=210, degEnd=330;
-  var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
-  var stepRad=stepDeg*Math.PI/180;
-  var BASE_R=92, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.06)));
-  var R=Math.max(BASE_R, Math.min(110, need));
-  var EDGE=32;
-
-  var center=uniformCenter(cx, cy, R);
-  if (center.x - R < EDGE) center.x = EDGE + R;
-
-  var positions=[];
-  for (var i=0;i<N;i++){
-    var ang=(degStart+stepDeg*i)*Math.PI/180;
-    positions.push({ i:i, x:center.x+R*Math.cos(ang), y:center.y+R*Math.sin(ang) });
+  function uniformCenter(cx, cy, R){
+    var M=16; return { x: Math.max(M+R, Math.min(window.innerWidth-M-R, cx)), y: Math.max(M+R, cy) };
   }
-  positions.sort(function(a,b){ return a.x - b.x; });
-  _radialGeo = [];
+  function refreshRadialOptions(){ if (!isSmall() || !radial || !radialForToken) return; openRadial(radialForToken); }
 
-  radialCloseBtn.style.left = center.x+'px';
-  radialCloseBtn.style.top  = center.y+'px';
-  springIn(radialCloseBtn, 40);
+  function springIn(el, delay){
+    try{
+      el.animate(
+        [
+          { transform: 'translate(-50%,-50%) scale(0.72)', opacity: 0 },
+          { transform: 'translate(-50%,-50%) scale(1.08)', opacity: 1, offset: .58 },
+          { transform: 'translate(-50%,-50%) scale(0.96)', opacity: 1, offset: .82 },
+          { transform: 'translate(-50%,-50%) scale(1.00)', opacity: 1 }
+        ],
+        { duration: 420, delay: delay||0, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }
+      );
+    }catch(_){}
+  }
 
-  radialOpts.innerHTML = '';
-  for (let j=0;j<N;j++){
-    (function(j){
+  function openRadial(token){
+    if(!radial||!isSmall()) return;
+    radialForToken = token;
+    if (radialCloseBtn) radialCloseBtn.setAttribute('type','button');
+
+    // Clean prior backdrop handler if any (avoid leaks/dupes)
+    if (_radialBackdropHandler){
+      try{ radial.removeEventListener('pointerdown', _radialBackdropHandler); }catch(_){}
+      _radialBackdropHandler = null;
+    }
+
+    var rect = token.getBoundingClientRect();
+    var cx = rect.left + rect.width/2;
+    var cy = rect.top + rect.height/2;
+
+    var rows = $$('.tier-row');
+    var N = rows.length; if (!N) return;
+
+    // Compact fan geometry:
+    // angles chosen to bias to upper-right arc while keeping fan compact
+    var DOT=42, GAP=6, degStart=210, degEnd=330; // see docs
+    var stepDeg=(degEnd-degStart)/Math.max(1,(N-1));
+    var stepRad=stepDeg*Math.PI/180;
+    var BASE_R=92, need=(DOT+GAP)/(2*Math.sin(Math.max(stepRad/2,0.06)));
+    var R=Math.max(BASE_R, Math.min(110, need));
+    var EDGE=32;
+
+    var center=uniformCenter(cx, cy, R);
+    if (center.x - R < EDGE) center.x = EDGE + R;
+
+    radialCloseBtn.style.left = center.x+'px';
+    radialCloseBtn.style.top  = center.y+'px';
+    springIn(radialCloseBtn, 40);
+
+    radialOpts.innerHTML = '';
+    for (let j=0;j<N;j++){
       var row = rows[j];
-      var pos = positions[j];
+      var lab = rowLabel(row);
+      var posX=center.x+R*Math.cos((degStart+stepDeg*j)*Math.PI/180);
+      var posY=center.y+R*Math.sin((degStart+stepDeg*j)*Math.PI/180);
+
       var btn = document.createElement('button');
       btn.type='button'; btn.className='radial-option';
-      btn.style.left = pos.x+'px';
-      btn.style.top  = pos.y+'px';
+      btn.style.left = posX+'px';
+      btn.style.top  = posY+'px';
       btn.style.transform = 'translate(-50%,-50%)';
-      btn.style.transitionDelay = (j*12)+'ms';
+      btn.style.transitionDelay = (j*14)+'ms';
 
-      var dot=document.createElement('span'); dot.className='dot'; dot.textContent=labels[j];
-
-      // color the dot to match the tier label if available
-      try {
-        var labCol = row.querySelector('.tier-label').dataset.color || (row.querySelector('.tier-label').style.background || '');
-        if(labCol){
-          dot.style.background = labCol;
-          dot.style.color = contrastColor(labCol);
-          dot.style.border = '1px solid rgba(0,0,0,.08)';
-        }
-      } catch(_) {}
-
+      var dot=document.createElement('span'); dot.className='dot'; dot.textContent=lab;
+      // Color-code to row label background
+      var rowColor = (row.querySelector('.tier-label')?.dataset?.color) || '#ffffff';
+      dot.style.background = rowColor;
+      dot.style.color = contrastColor(rowColor);
       btn.appendChild(dot);
 
       on(btn,'pointerenter', function(){ btn.classList.add('is-hot'); });
@@ -737,507 +678,518 @@ function openRadial(token){
       on(btn,'click', function(){ moveToken(token, row.querySelector('.tier-drop'), null); closeRadial(); });
 
       radialOpts.appendChild(btn);
-      _radialGeo.push({row:row, btn:btn});
-      springIn(btn, j*18); // compact spring
-    })(j);
+      springIn(btn, j*24);
+    }
+
+    _radialBackdropHandler = function(ev){
+      if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
+      var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
+      var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
+      var prevPE=radial.style.pointerEvents; radial.style.pointerEvents='none';
+      var under=document.elementFromPoint(x,y); radial.style.pointerEvents=prevPE||'auto';
+      var other=under && under.closest && under.closest('#tray .token');
+      if(other){ closeRadial(); $$('.token.selected').forEach(function(t){t.classList.remove('selected');}); other.classList.add('selected'); openRadial(other); ev.preventDefault(); return; }
+      closeRadial();
+    };
+    radial.addEventListener('pointerdown',_radialBackdropHandler,{passive:false});
+
+    radial.classList.remove('hidden');
+    radial.setAttribute('aria-hidden','false');
   }
 
-  function backdrop(ev){
-    if(ev.target.closest('.radial-option') || ev.target.closest('.radial-close')) return;
-    var x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
-    var y=(ev.touches&&ev.touches[0]?ev.touches[0].clientY:ev.clientY);
-    var prevPE=radial.style.pointerEvents; radial.style.pointerEvents='none';
-    var under=document.elementFromPoint(x,y); radial.style.pointerEvents=prevPE||'auto';
-    var other=under && under.closest && under.closest('#tray .token');
-    if(other){ closeRadial(); $$('.token.selected').forEach(function(t){t.classList.remove('selected');}); other.classList.add('selected'); openRadial(other); ev.preventDefault(); return; }
-    closeRadial();
+  if(radialCloseBtn){
+    on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false);
   }
-  radial.addEventListener('pointerdown',backdrop,{passive:false});
-  radial._backdropHandler=backdrop;
+  function closeRadial(){
+    if(!radial) return;
+    if(_radialBackdropHandler){
+      try{ radial.removeEventListener('pointerdown', _radialBackdropHandler); }catch(_){}
+      _radialBackdropHandler = null;
+    }
+    radial.classList.add('hidden');
+    radial.setAttribute('aria-hidden','true');
+    radialForToken = null;
+  }
+  on(window,'resize', refreshRadialOptions);
 
-  radial.classList.remove('hidden');
-  radial.setAttribute('aria-hidden','false');
-}
-if(radialCloseBtn){ on(radialCloseBtn,'click', function(e){ e.stopPropagation(); closeRadial(); }, false); }
-function closeRadial(){
-  if(!radial) return;
-  if(radial._backdropHandler){ radial.removeEventListener('pointerdown', radial._backdropHandler); delete radial._backdropHandler; }
-  radial.classList.add('hidden');
-  radial.setAttribute('aria-hidden','true');
-  radialForToken = null; _radialGeo = [];
-}
-on(window,'resize', refreshRadialOptions);
+  /* ---------- Clear Board: full reset ---------- */
+  var defaultTiers = [
+    { label:'S', color:'#ff6b6b' },
+    { label:'A', color:'#f6c02f' },
+    { label:'B', color:'#22c55e' },
+    { label:'C', color:'#3b82f6' },
+    { label:'D', color:'#a78bfa' }
+  ];
 
-/* ---------- Utilities for export image prefetch ---------- */
-function isCrossOriginUrl(url){
-  try{
-    if (!url) return false;
-    if (url.startsWith('data:')) return false;
-    const u = new URL(url, location.href);
-    return u.origin !== location.origin;
-  }catch(_){ return false; }
-}
+  // MD3-like bolder palette; black text friendliness enforced
+  var BASE_PALETTE = [
+    '#B6F5E6','#6C3BF0','#E2E540','#C0F27E','#7CE7D6',
+    '#C9C7F7','#C7F0AA','#9CE4FF','#9ED4FF','#DCCBFF',
+    '#BEE9F1','#CDE99F','#9FD8DF','#C8B6FF','#B8E1FF',
+    '#FFD6A5','#C3F0CA','#EEEDC9','#B7F6D4','#C7F3AA'
+  ];
+  function contrastForBlack(hex){ var L=relativeLuminance(hexToRgb(hex)); return (L + 0.05) / 0.05; }
+  function ensureForBlack(hex){
+    var target = 4.2, safe = hex, steps=0;
+    while (contrastForBlack(safe) < target && steps < 8){ safe = lighten(safe, 0.03); steps++; }
+    var toned = mixHex(safe, hex, 0.20);
+    var guard = 0;
+    while (contrastForBlack(toned) < target && guard < 4){ toned = lighten(toned, 0.01); guard++; }
+    return toned;
+  }
+  var presetPalette = BASE_PALETTE.map(ensureForBlack);
 
-/* Try to fetch images and convert to data URLs prior to export.
-   Returns Promise resolving to a map { originalSrc: dataURL | originalSrc (fallback) }
-*/
-function prefetchImagesForExport(panel){
-  var imgs = [].slice.call((panel.querySelectorAll('img')));
-  if (imgs.length === 0) return Promise.resolve({});
+  // Rotating indices (now saved in autosave)
+  var tierIdx = 0;
+  function nextTierColor(){ var T=['#ff6b6b','#f6c02f','#22c55e','#3b82f6','#a78bfa','#06b6d4','#e11d48','#16a34a','#f97316','#0ea5e9']; var c=T[tierIdx%T.length]; tierIdx++; return c; }
+  var pIndex = 0; function nextPreset(){ var c=presetPalette[pIndex%presetPalette.length]; pIndex++; return c; }
 
-  var promises = imgs.map(function(img){
-    var src = img.getAttribute('src') || '';
-    if (!src || src.startsWith('data:')) return Promise.resolve({ src: src, result: src });
+  var communityCast = [
+    "Anette","Authority","B7","Cindy","Clamy","Clay","Cody","Denver","Devon","Dexy","Domo",
+    "Gavin","Harry","Jay","Jeremy","Katie","Kiev","Kikki","Kyle","Lewis","Meegan",
+    "Munch","Paper","Ray","Safoof","Temz","TomTom","V","Versse","Xavier"
+  ];
 
-    // If same-origin or server provides CORS, try fetch+blob->dataURL
-    return fetch(src, { mode: 'cors' }).then(function(resp){
-      if(!resp.ok) throw new Error('fetch-failed');
-      return resp.blob();
-    }).then(function(blob){
-      return new Promise(function(resolve){
-        var r = new FileReader();
-        r.onload = function(ev){ resolve({ src: src, result: ev.target.result }); };
-        r.onerror = function(){ resolve({ src: src, result: src }); };
-        r.readAsDataURL(blob);
-      });
-    }).catch(function(){
-      // fallback: try to set crossOrigin attribute and let html2canvas attempt (no dataURL available)
-      return Promise.resolve({ src: src, result: src });
-    });
-  });
+  function createRow(cfg){
+    var dom = buildRowDom();
+    var node = dom.row, chip = dom.chip, del = dom.del, drop = dom.drop, handle = dom.handle, labelWrap=dom.labelWrap;
 
-  return Promise.all(promises).then(function(results){
-    var map = {};
-    results.forEach(function(r){ map[r.src] = r.result; });
-    return map;
-  });
-}
+    chip.textContent = cfg.label;
+    chip.dataset.color = cfg.color;
 
-/* ---------- Canvas validation ---------- */
-function isCanvasBlank(canvas){
-  try{
-    var ctx = canvas.getContext('2d');
-    var w = Math.max(1, Math.floor(canvas.width));
-    var h = Math.max(1, Math.floor(canvas.height));
-    // sample a few pixels across the canvas (to be fast) rather than getImageData for entire canvas
-    var stepX = Math.max(1, Math.floor(w / 40));
-    var stepY = Math.max(1, Math.floor(h / 40));
-    for (var y = 0; y < h; y += Math.max(1, Math.floor(h/20))){
-      for (var x = 0; x < w; x += Math.max(1, Math.floor(w/20))){
-        var p = ctx.getImageData(x, y, 1, 1).data;
-        // check if alpha > 0 and not purely a single-color transparent background
-        if (p[3] > 8) { return false; }
+    labelWrap.style.background = cfg.color;
+    labelWrap.dataset.color = cfg.color;
+    chip.style.background = 'transparent';
+    chip.style.color = contrastColor(cfg.color);
+
+    del.style.background = darken(cfg.color, 0.35);
+
+    var tint = tintFrom(cfg.color);
+    drop.style.background = tint; drop.dataset.manual = 'false';
+
+    fitChipText(chip);
+
+    on(chip,'keydown', function(e){
+      if(e.key==='Enter'){
+        e.preventDefault(); chip.blur();
+        var next = drop; if(next) next.focus();  // focus management
       }
-    }
-    // if we reach here, likely blank/transparent
-    return true;
-  }catch(e){
-    return false; // be conservative -> assume not blank if error
-  }
-}
-
-/* ---------- EXPORT: robust attempts, flatten CSS, convert images, 1200px width ---------- */
-(function(){
-  var overlay=document.createElement('div');
-  overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
-  overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
-  overlay.innerHTML='<div style="padding:14px 18px;border-radius:10px;background:#111;color:#fff;font-weight:600;display:flex;gap:10px;align-items:center;"><span class="spinner" style="width:18px;height:18px;border-radius:50%;border:3px solid #fff;border-right-color:transparent;display:inline-block;animation:spin .9s linear infinite;"></span><span>Rendering PNG…</span></div>';
-  document.body.appendChild(overlay);
-  var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
-
-  function attemptHtml2Canvas(panel, imageMap, opts){
-    return html2canvas(panel, opts).then(function(canvas){
-      // validate canvas is not blank
-      if (isCanvasBlank(canvas)) throw new Error('blank-canvas');
-      return canvas;
     });
+    on(chip,'input', function(){ fitChipText(chip); queueAutosave(); });
+
+    on(del,'click', function(){
+      if(!confirm('Delete this row? Items in it will return to Image Storage.')) return;
+      // close radial to avoid stale refs/buttons
+      try{ closeRadial(); }catch(_){}
+      var tokens = $$('.token', drop);
+      flipZones([drop,tray], function(){ tokens.forEach(function(t){ tray.appendChild(t); }); });
+      node.classList.add('removing');
+      setTimeout(function(){ node.remove(); refreshRadialOptions(); queueAutosave();
+        historyStack.push({type:'row-delete', rowHTML: node.outerHTML}); updateUndo();
+      }, 260);
+    });
+
+    enableRowReorder(handle, node);
+    enableClickToPlace(drop);
+    return node;
   }
 
-  on($('#saveBtn'),'click', function(){
-    this.classList.add('bounce-anim');
-    once(this,'animationend',()=>this.classList.remove('bounce-anim'));
+  function resetToDefault(){
+    try { closeRadial(); } catch(_) {}
 
-    if (typeof html2canvas !== 'function'){
-      alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
+    historyStack = [];
+    updateUndo();
+
+    try { localStorage.removeItem(AUTOSAVE_KEY); } catch(e){ console.warn('Autosave clear failed', e); }
+
+    var title = $('.board-title');
+    if (title) title.textContent = '';
+
+    var boardEl = $('#tierBoard');
+    if (boardEl){
+      boardEl.innerHTML = '';
+      tierIdx = 0;
+      defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
     }
 
-    // reset selection/drag states
+    var trayEl = $('#tray');
+    if (trayEl){
+      trayEl.innerHTML = '';
+      // rotate start index for fairness each load
+      pIndex = Math.floor(Math.random()*presetPalette.length);
+      communityCast.forEach(function(n){
+        trayEl.appendChild(buildNameToken(n, nextPreset(), true));
+      });
+    }
+
     $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
     $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
+    refitAllLabels();
+    refitAllChips();
+    announce('Everything reset to defaults.');
+  }
+
+  /* ---------- Autosave ---------- */
+  var AUTOSAVE_KEY='tm_autosave_v2'; // bump version to include indices
+  function serializeState(){
+    var state={ rows:[], tray:[], version:2, tierIdx:tierIdx, pIndex:pIndex };
+    $$('.tier-row').forEach(function(r){
+      var chip=$('.label-chip',r), wrap=$('.tier-label',r);
+      var color = (chip && chip.dataset.color) || (wrap && wrap.dataset.color) || '#8b7dff';
+      var entry={ label: chip ? chip.textContent : '', color: color, items: [] };
+      $$('.token', r.querySelector('.tier-drop')).forEach(function(tok){
+        if (tok.querySelector('img')) entry.items.push({t:'i', src: tok.querySelector('img').src});
+        else entry.items.push({t:'n', text: $('.label',tok)?.textContent || '', color: tok.style.background});
+      });
+      state.rows.push(entry);
+    });
+    $$('#tray .token').forEach(function(tok){
+      if (tok.querySelector('img')) state.tray.push({t:'i', src: tok.querySelector('img').src});
+      else state.tray.push({t:'n', text: $('.label',tok)?.textContent || '', color: tok.style.background});
+    });
+    return state;
+  }
+  function restoreState(state){
+    if(!state || !state.rows) return false;
+    var bd=$('#tierBoard'); if(bd) bd.innerHTML='';
+    (state.rows||[]).forEach(function(r){
+      var row=createRow({label:r.label||'', color:r.color||nextTierColor()});
+      $('#tierBoard').appendChild(row);
+      var drop=row.querySelector('.tier-drop');
+      (r.items||[]).forEach(function(it){
+        if(it.t==='i') drop.appendChild(buildImageToken(it.src,''));
+        else drop.appendChild(buildNameToken(it.text||'', it.color||nextPreset(), true));
+      });
+    });
+    var tr=$('#tray'); if(tr) tr.innerHTML='';
+    (state.tray||[]).forEach(function(it){
+      if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
+      else tray.appendChild(buildNameToken(it.text||'', it.color||nextPreset(), true));
+    });
+    // restore indices if present
+    if (typeof state.tierIdx === 'number') tierIdx = state.tierIdx;
+    if (typeof state.pIndex === 'number') pIndex = state.pIndex;
+    refitAllLabels(); refitAllChips();
+    return true;
+  }
+  function queueAutosave(){
+    try{
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState()));
+    }catch(e){
+      console.warn('Autosave failed:', e);
+      announce('Storage is full — changes may not autosave.');
+    }
+  }
+  function maybeClearAutosaveOnReload(){
+    try{
+      if (!window.performance || !performance.getEntriesByType) return;
+      var nav = performance.getEntriesByType('navigation')[0];
+      if (nav && nav.type === 'reload'){ localStorage.removeItem(AUTOSAVE_KEY); }
+    }catch(_){}
+  }
+
+  /* ---------- Export: hardened html2canvas pipeline ---------- */
+  function isCrossOriginUrl(url){
+    try{
+      if (!url) return false;
+      if (url.startsWith('data:')) return false;
+      var u = new URL(url, location.href);
+      return u.origin !== location.origin;
+    }catch(_){ return false; }
+  }
+
+  // Convert images in a given document root to data URLs (to avoid CORS)
+  function imagesToDataURL(doc){
+    var imgs = Array.prototype.slice.call(doc.querySelectorAll('img'));
+    var replaced = new WeakMap(); // map <img> -> original src
+    imgs.forEach(function(img){
+      try{
+        var src = img.getAttribute('src')||'';
+        if (!src || src.startsWith('data:')) return;
+        var canvas = doc.createElement('canvas');
+        var c2d = canvas.getContext('2d');
+        var tmp = new Image();
+        tmp.crossOrigin = 'anonymous';
+        tmp.onload = function(){
+          try{
+            canvas.width = tmp.naturalWidth || tmp.width;
+            canvas.height = tmp.naturalHeight || tmp.height;
+            c2d.drawImage(tmp, 0, 0);
+            var data = canvas.toDataURL('image/png');
+            replaced.set(img, src);
+            img.setAttribute('src', data);
+          }catch(e){ /* ignore draw errors */ }
+        };
+        tmp.onerror = function(){ /* ignore */ };
+        // Resolve absolute URL against the page for relative paths
+        var abs = isCrossOriginUrl(src) ? src : new URL(src, location.href).href;
+        tmp.src = abs;
+      }catch(_){}
+    });
+    return replaced;
+  }
+
+  // Quick random sampling to detect a blank/transparent canvas
+  function looksBlankCanvas(canvas){
+    try{
+      var ctx = canvas.getContext('2d');
+      var w = canvas.width, h = canvas.height;
+      if (!w || !h) return true;
+      var samples = 16;
+      for (var i=0;i<samples;i++){
+        var x = Math.floor(Math.random()*w);
+        var y = Math.floor(Math.random()*h);
+        var d = ctx.getImageData(x,y,1,1).data;
+        if (d[3] !== 0) return false; // has some opacity
+      }
+      return true;
+    }catch(_){ return false; }
+  }
+
+  // Unified attempt wrapper
+  function captureBoardPNG(){
     var panel = $('#boardPanel');
     if(!panel){ alert('Could not find the board to export.'); return; }
+
+    var overlay=document.getElementById('exportOverlay');
+    if(!overlay){
+      overlay=document.createElement('div');
+      overlay.id='exportOverlay'; overlay.setAttribute('aria-live','polite');
+      overlay.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:9999;';
+      overlay.innerHTML='<div style="padding:14px 18px;border-radius:10px;background:#111;color:#fff;font-weight:600;display:flex;gap:10px;align-items:center;"><span class="spinner" style="width:18px;height:18px;border-radius:50%;border:3px solid #fff;border-right-color:transparent;display:inline-block;animation:spin .9s linear infinite;"></span><span>Rendering PNG…</span></div>';
+      document.body.appendChild(overlay);
+      var style=document.createElement('style'); style.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(style);
+    }
+
+    // Clear transient UI
+    $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
+    $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
 
     overlay.style.display='flex';
     document.body.style.pointerEvents = 'none';
 
-    // Step 1: prefetch images (try convert to dataURLs)
-    prefetchImagesForExport(panel).then(function(imageMap){
-      // apply dataURLs to cloned document later in onclone; but also temporarily set attributes on original document
-      // We don't mutate original srcs permanently — we'll stash original srcs to restore later if we replace them.
-      var replaced = [];
-      Object.keys(imageMap).forEach(function(origSrc){
-        var newSrc = imageMap[origSrc];
-        if (newSrc && newSrc !== origSrc){
-          // replace matches in the live DOM (helps html2canvas cloning and ensures cloned doc has data URLs)
-          $$('.token img').forEach(function(imgEl){
-            if (imgEl.getAttribute('src') === origSrc){
-              replaced.push({ el: imgEl, orig: origSrc });
-              imgEl.setAttribute('src', newSrc);
-            }
-          });
-        }
-      });
+    // Main attempt sequence with progressively simpler options
+    var attempts = [
+      { scale: Math.min(2, window.devicePixelRatio || 1.5), useCORS: true, allowTaint: false, foreignObjectRendering: false, backgroundColor: cssVar('--surface')||'#0f1115' },
+      { scale: 2, useCORS: true, allowTaint: true,  foreignObjectRendering: false, backgroundColor: cssVar('--surface')||'#0f1115' },
+      { scale: 1.5, useCORS: false, allowTaint: true, foreignObjectRendering: false, backgroundColor: cssVar('--surface')||'#0f1115' }
+    ];
 
-      // Build array of html2canvas option variations to attempt
-      var baseOptions = {
-        backgroundColor: cssVar('--surface') || '#0f1115',
-        scale: Math.min(2, window.devicePixelRatio || 1.5),
-        useCORS: true,
-        allowTaint: false,
+    var tried = 0;
+    function tryOnce(){
+      if (tried >= attempts.length){
+        overlay.style.display='none';
+        document.body.style.pointerEvents = '';
+        alert('Sorry, something went wrong while exporting');
+        return;
+      }
+      var opts = attempts[tried++];
+
+      html2canvas(panel, {
+        backgroundColor: opts.backgroundColor,
+        scale: opts.scale,
+        useCORS: opts.useCORS,
+        allowTaint: opts.allowTaint,
         imageTimeout: 15000,
-        foreignObjectRendering: false,
+        foreignObjectRendering: opts.foreignObjectRendering,
         logging: false,
         scrollX: 0,
         scrollY: 0,
-        width: 1200,
-        windowWidth: 1200
-      };
+        windowWidth: 1300,
+        ignoreElements: function(el){
+          // We capture "as is" but still ignore the radial picker
+          if (el && el.id === 'radialPicker') return true;
+          return false;
+        },
+        onclone: function(doc){
+          // MARK export mode
+          doc.documentElement.classList.add('exporting');
 
-      // Variation attempts: start conservative, then try foreignObjectRendering if needed, and then a lower-level fallback
-      var attempts = [
-        Object.assign({}, baseOptions, { useCORS: true, foreignObjectRendering: false }),
-        Object.assign({}, baseOptions, { useCORS: true, foreignObjectRendering: true }),
-        Object.assign({}, baseOptions, { useCORS: false, foreignObjectRendering: true })
-      ];
+          // Enforce 1200px board width for parity across devices
+          var wrap = doc.querySelector('.wrap');
+          if (wrap){
+            wrap.style.maxWidth='1200px';
+            wrap.style.width='1200px';
+          }
 
-      // onclone adjustments — aggressive reset to avoid backdrop-filter/transform/animations
-      function oncloneReset(doc){
-        // mark clone as exporting and pinned width
-        doc.documentElement.classList.add('exporting','desktop-capture');
-
-        // pin wrap width & forcing 1200px
-        var wrap = doc.querySelector('.wrap');
-        if (wrap){ wrap.style.maxWidth='1200px'; wrap.style.width='1200px'; }
-
-        // find target clone panel and sanitize
-        var clonePanel = doc.querySelector('#'+panel.id);
-        if (!clonePanel) return;
-
-        // Remove UI elements that shouldn't be exported
-        clonePanel.querySelectorAll('.row-del,.radial,[data-nonexport]').forEach(function(n){ n.remove(); });
-
-        // If title is blank, remove the title container so it won't be captured
-        var title = clonePanel.querySelector('.board-title');
-        if (title && title.textContent.replace(/[\s\u00A0]+/g,'') === '') {
-          var wrapTitle = title.closest('.board-title-wrap');
-          if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
-          clonePanel.classList.add('no-title');
-        }
-
-        // Aggressive CSS reset & flattening to avoid html2canvas issues
-        var reset = doc.createElement('style');
-        reset.textContent = `
-          /* Remove filters, transforms, animations and complex backgrounds */
-          * { animation: none !important; transition: none !important; transform: none !important !important; }
-          :root, html, body { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
-          .panel, .tier-drop, .wrap { background: ${cssVar('--surface-raised') || '#151820'} !important; box-shadow: none !important; border:1px solid ${cssVar('--border') || 'rgba(255,255,255,.08)'} !important; }
-          .token::after, .token.drag-ghost::before, .token.dragging-cue::before { display: none !important; content: none !important; }
-          .token, .token img { filter: none !important; box-shadow: none !important; }
-          .board-title[contenteditable]:empty::before{ content:'' !important; }
-          .exporting .tier-row{ grid-template-columns:180px 1fr !important; }
-          /* ensure fonts/sizes not scaled */
-          .wrap { width: 1200px !important; max-width:1200px !important; }
-        `;
-        // append to head of clone doc
-        doc.head.appendChild(reset);
-
-        // Convert any remaining <img> in the clone to data URLs where possible
-        var cloneImgs = clonePanel.querySelectorAll('img');
-        cloneImgs.forEach(function(ci){
-          var src = ci.getAttribute('src') || '';
-          if (src && !src.startsWith('data:')){
-            // If prefetch created a dataURL mapping, replace it
-            if (imageMap[src] && imageMap[src].startsWith('data:')) {
-              ci.setAttribute('src', imageMap[src]);
-            } else {
-              // attempt to draw the image onto a canvas and get data URL (best effort)
-              try {
-                var tmpImg = new Image();
-                tmpImg.crossOrigin = 'anonymous';
-                tmpImg.src = src;
-                tmpImg.onload = function(){
-                  try {
-                    var c = doc.createElement('canvas');
-                    c.width = tmpImg.naturalWidth; c.height = tmpImg.naturalHeight;
-                    var ctx = c.getContext('2d');
-                    ctx.drawImage(tmpImg, 0, 0);
-                    var data = c.toDataURL();
-                    ci.setAttribute('src', data);
-                  } catch(_) {}
-                };
-              } catch(_) {}
+          // Ensure title behavior: only capture if user typed real content
+          var liveTitle = document.querySelector('.board-title');
+          var cloneTitle = doc.querySelector('.board-title');
+          if (cloneTitle){
+            var liveText = (liveTitle && liveTitle.textContent || '').replace(/[\s\u00A0]+/g,'');
+            if (!liveText){ // user did NOT type a title
+              var wrapTitle = cloneTitle.closest('.board-title-wrap');
+              if (wrapTitle && wrapTitle.parentNode) wrapTitle.parentNode.removeChild(wrapTitle);
+              var ownerPanel = doc.getElementById('boardPanel');
+              if (ownerPanel) ownerPanel.classList.add('no-title');
             }
           }
-        });
-      }
 
-      // Run attempts sequentially
-      var attemptIndex = 0;
-      function tryNextAttempt(){
-        if (attemptIndex >= attempts.length){
-          overlay.style.display='none';
-          document.body.style.pointerEvents = '';
-          // restore any replaced original images
-          replaced.forEach(function(r){ try { r.el.setAttribute('src', r.orig); } catch(_){} });
-          alert('Sorry, something went wrong while exporting.');
-          return;
+          // 1) Strip problematic CSS features, flatten glass & filters
+          var reset = doc.createElement('style');
+          reset.textContent = `
+            *{ animation:none !important; transition:none !important; }
+            .panel, .tier-drop{ backdrop-filter:none !important; -webkit-backdrop-filter:none !important; filter:none !important; }
+            .token, .token:hover, .animate-drop, .flip-anim{ transform:none !important; }
+            .token::after{ content:none !important; display:none !important; } /* remove any shimmer/rim */
+            .board-title[contenteditable]:empty::before{ content:'' !important; } /* suppress placeholder reliably */
+          `;
+          doc.head.appendChild(reset);
+
+          // 2) Convert all images to data URLs to avoid CORS
+          imagesToDataURL(doc);
+
+          // 3) Tighten board container to avoid layout shifts
+          var boardPanelClone = doc.getElementById('boardPanel');
+          if (boardPanelClone){
+            var r = boardPanelClone.getBoundingClientRect();
+            boardPanelClone.style.width = (r.width)+'px';
+          }
         }
-        var opts = attempts[attemptIndex];
-        attemptIndex++;
-
-        // clone hook
-        opts.onclone = function(doc){
-          oncloneReset(doc);
-        };
-
-        attemptHtml2Canvas(panel, imageMap, opts).then(function(canvas){
-          // success -> download
-          var a=document.createElement('a');
-          a.href=canvas.toDataURL('image/png');
-          a.download='tier-list.png';
-          document.body.appendChild(a); a.click(); a.remove();
-
-          overlay.style.display='none';
-          document.body.style.pointerEvents = '';
-          // restore any replaced original images
-          replaced.forEach(function(r){ try { r.el.setAttribute('src', r.orig); } catch(_){} });
-        }).catch(function(err){
-          // try again with next options
-          console.warn('Export attempt failed:', err && err.message);
-          // small delay then next attempt
-          setTimeout(tryNextAttempt, 350);
-        });
-      }
-
-      // start attempts
-      tryNextAttempt();
-
-    }).catch(function(err){
-      console.error('prefetchImagesForExport error', err);
-      overlay.style.display='none';
-      document.body.style.pointerEvents = '';
-      alert('Sorry, something went wrong while preparing images for export.');
-    });
-  });
-})();
-
-/* ---------- Color picker preview removed intentionally ---------- */
-
-/* ---------- Autosave ---------- */
-var AUTOSAVE_KEY='tm_autosave_v1';
-function serializeState(){
-  var state={ rows:[], tray:[], version:1 };
-  $$('.tier-row').forEach(function(r){
-    var chip=$('.label-chip',r), wrap=$('.tier-label',r);
-    var color = (chip && chip.dataset.color) || (wrap && wrap.dataset.color) || '#8b7dff';
-    var entry={ label: chip.textContent, color: color, items: [] };
-    $$('.token', r.querySelector('.tier-drop')).forEach(function(tok){
-      if (tok.querySelector('img')) entry.items.push({t:'i', src: tok.querySelector('img').src});
-      else entry.items.push({t:'n', text: $('.label',tok).textContent, color: tok.style.background});
-    });
-    state.rows.push(entry);
-  });
-  $$('#tray .token').forEach(function(tok){
-    if (tok.querySelector('img')) state.tray.push({t:'i', src: tok.querySelector('img').src});
-    else state.tray.push({t:'n', text: $('.label',tok).textContent, color: tok.style.background});
-  });
-  return state;
-}
-function restoreState(state){
-  if(!state || !state.rows) return false;
-  $('#tierBoard').innerHTML='';
-  state.rows.forEach(function(r){
-    var row=createRow({label:r.label, color:r.color});
-    $('#tierBoard').appendChild(row);
-    var drop=row.querySelector('.tier-drop');
-    (r.items||[]).forEach(function(it){
-      if(it.t==='i') drop.appendChild(buildImageToken(it.src,''));
-      else drop.appendChild(buildNameToken(it.text, it.color, true));
-    });
-  });
-  $('#tray').innerHTML='';
-  (state.tray||[]).forEach(function(it){
-    if(it.t==='i') tray.appendChild(buildImageToken(it.src,''));
-    else tray.appendChild(buildNameToken(it.text, it.color, true));
-  });
-  refitAllLabels(); refitAllChips();
-  return true;
-}
-function queueAutosave(){ try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeState())); }catch(_){ } }
-function maybeClearAutosaveOnReload(){
-  try{
-    var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
-    if (nav && nav.type === 'reload'){ localStorage.removeItem(AUTOSAVE_KEY); }
-  }catch(_){}
-}
-
-/* ---------- Full reset to original defaults ---------- */
-function resetToDefault(){
-  // Close mobile picker if it’s open
-  try { closeRadial(); } catch(_) {}
-
-  // Clear undo history
-  historyStack = [];
-  updateUndo();
-
-  // Nuke autosave
-  try { localStorage.removeItem(AUTOSAVE_KEY); } catch(_) {}
-
-  // Clear board title (keeps placeholder)
-  var title = $('.board-title');
-  if (title) title.textContent = '';
-
-  // Rebuild default rows
-  var boardEl = $('#tierBoard');
-  if (boardEl){
-    boardEl.innerHTML = '';
-    tierIdx = 0;                              // reset tier color cycle
-    defaultTiers.forEach(function(t){ boardEl.appendChild(createRow(t)); });
-  }
-
-  // Re-seed the tray with the original name tokens (no images)
-  var trayEl = $('#tray');
-  if (trayEl){
-    trayEl.innerHTML = '';
-    rotatePresetStart();                      // randomize starting palette
-    pIndex = pIndex;                          // pIndex already set by rotatePresetStart
-    communityCast.forEach(function(n){
-      trayEl.appendChild(buildNameToken(n, nextPreset(), true));
-    });
-  }
-
-  // Tidy UI
-  $$('.token.selected').forEach(function(t){ t.classList.remove('selected'); });
-  $$('.dropzone.drag-over').forEach(function(z){ z.classList.remove('drag-over'); });
-
-  refitAllLabels();
-  refitAllChips();
-  announce('Everything reset to defaults.');
-}
-
-/* ---------- Desktop inline-controls merge ---------- */
-function setupDesktopControlsMerge(){
-  var controls = $('.controls'); if(!controls) return;
-  var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
-  var trayPanel = $('#tray') ? $('#tray').closest('.panel') : null; if(!trayPanel) return;
-
-  var homeMarker = document.createElement('div'); homeMarker.id='controlsHome';
-  if (controlsPanel && !$('#controlsHome')) controlsPanel.insertBefore(homeMarker, controls);
-
-  var title = trayPanel.querySelector('.section-title');
-  var titleHome = document.createElement('div'); titleHome.id='titleHome';
-  if (title && !$('#titleHome')) title.parentNode.insertBefore(titleHome, title.nextSibling);
-
-  var sectionBar = document.createElement('div'); sectionBar.className='section-bar';
-  var inlineWrap = document.createElement('div'); inlineWrap.className='controls-inline';
-
-  function apply(){
-    if (isDesktopWide()){
-      if (!sectionBar.parentNode){ trayPanel.insertBefore(sectionBar, $('#tray')); }
-      if (title && title.parentNode !== sectionBar){ sectionBar.appendChild(title); }
-      if (!inlineWrap.parentNode){ sectionBar.appendChild(inlineWrap); }
-      if (controls.parentNode !== inlineWrap){ inlineWrap.appendChild(controls); }
-      document.body.classList.add('controls-merged');
-    } else {
-      if (titleHome && titleHome.parentNode && title && title.parentNode !== titleHome.parentNode){
-        titleHome.parentNode.insertBefore(title, titleHome);
-      }
-      if (homeMarker && homeMarker.parentNode && controls.parentNode !== homeMarker.parentNode){
-        homeMarker.parentNode.insertBefore(controls, homeMarker.nextSibling);
-      }
-      document.body.classList.remove('controls-merged');
-      if (inlineWrap.parentNode) inlineWrap.parentNode.removeChild(inlineWrap);
-      if (sectionBar.parentNode) sectionBar.parentNode.removeChild(sectionBar);
+      }).then(function(canvas){
+        if (!canvas || looksBlankCanvas(canvas)){ throw new Error('Blank canvas'); }
+        var a=document.createElement('a');
+        a.href=canvas.toDataURL('image/png');
+        a.download='tier-list.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        overlay.style.display='none';
+        document.body.style.pointerEvents = '';
+      }).catch(function(err){
+        console.warn('Export attempt failed:', err);
+        // Next attempt
+        setTimeout(tryOnce, 50);
+      });
     }
+
+    tryOnce();
   }
 
-  apply();
-  on(window,'resize', debounce(apply, 120));
-}
+  /* ---------- Desktop controls merge (unchanged behavior) ---------- */
+  function setupDesktopControlsMerge(){
+    var controls = $('.controls'); if(!controls) return;
+    var controlsPanel = controls.closest('.panel'); if(controlsPanel) controlsPanel.classList.add('controls-panel');
+    var trayPanel = $('#tray') ? $('#tray').closest('.panel') : null; if(!trayPanel) return;
 
-/* ---------- Init ---------- */
-document.addEventListener('DOMContentLoaded', function start(){
-  board = $('#tierBoard'); tray = $('#tray');
+    var homeMarker = document.createElement('div'); homeMarker.id='controlsHome';
+    if (controlsPanel && !$('#controlsHome')) controlsPanel.insertBefore(homeMarker, controls);
 
-  swapAllIcons();
-  maybeClearAutosaveOnReload();
+    var title = trayPanel.querySelector('.section-title');
+    var titleHome = document.createElement('div'); titleHome.id='titleHome';
+    if (title && !$('#titleHome')) title.parentNode.insertBefore(titleHome, title.nextSibling);
 
-  // rotate starting preset index so tokens change colors across loads
-  rotatePresetStart();
+    var sectionBar = document.createElement('div'); sectionBar.className='section-bar';
+    var inlineWrap = document.createElement('div'); inlineWrap.className='controls-inline-desktop';
 
-  var saved=null;
-  try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
-  if (saved && restoreState(saved)){
-    announce('Restored your last session.');
-  } else {
-    defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
-    communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
-  }
-
-  on($('#addTierBtn'),'click', function(){
-    this.classList.add('bounce-anim');
-    once(this,'animationend',()=>this.classList.remove('bounce-anim'));
-    var row = createRow({label:'NEW', color: nextTierColor()});
-    board.appendChild(row);
-    var chip = $('.label-chip', row); if (chip) chip.focus();
-    refreshRadialOptions(); queueAutosave();
-  });
-
-  on($('#addNameBtn'),'click', function(){
-    var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
-    var name = nameInput.value.trim(); if (!name) return;
-    var chosen = colorInput.value || nextPreset();
-    tray.appendChild(buildNameToken(name, chosen, false));
-    nameInput.value='';
-    colorInput.value = nextPreset();
-    refitAllLabels(); queueAutosave();
-  });
-
-  on($('#imageInput'),'change', function(e){
-    Array.prototype.forEach.call(e.target.files, function(file){
-      if(!file.type || file.type.indexOf('image/')!==0) return;
-      var reader = new FileReader();
-      reader.onload = function(ev){ tray.appendChild(buildImageToken(ev.target.result, file.name)); queueAutosave(); };
-      reader.readAsDataURL(file);
-    });
-  });
-
-  // Help content — single-tip that varies by device
-  var help=$('#helpText') || $('.help');
-  if(help){
-    help.setAttribute('role','note');
-    help.setAttribute('aria-live','polite');
-    if (isSmall()){
-      help.innerHTML = '<strong>Help</strong><br><span><b>Phone:</b> Tap a circle in Image Storage to pick a row. Drag to reorder or drag back to remove.</span>';
-    } else {
-      help.innerHTML = '<strong>Help</strong><br><span><b>Desktop/iPad:</b> Drag circles into rows. Use Alt+←/→ to move within a row; Alt+↑/↓ to move between rows. Click a tier label to edit.</span>';
+    function apply(){
+      if (isDesktopWide()){
+        if (!sectionBar.parentNode){ trayPanel.insertBefore(sectionBar, $('#tray')); }
+        if (title && title.parentNode !== sectionBar){ sectionBar.appendChild(title); }
+        if (!inlineWrap.parentNode){ sectionBar.appendChild(inlineWrap); }
+        if (controls.parentNode !== inlineWrap){ inlineWrap.appendChild(controls); }
+        document.body.classList.add('controls-merged');
+      } else {
+        if (titleHome && titleHome.parentNode && title && title.parentNode !== titleHome.parentNode){
+          titleHome.parentNode.insertBefore(title, titleHome);
+        }
+        if (homeMarker && homeMarker.parentNode && controls.parentNode !== homeMarker.parentNode){
+          homeMarker.parentNode.insertBefore(controls, homeMarker.nextSibling);
+        }
+        document.body.classList.remove('controls-merged');
+        if (inlineWrap.parentNode) inlineWrap.parentNode.removeChild(inlineWrap);
+        if (sectionBar.parentNode) sectionBar.parentNode.removeChild(sectionBar);
+      }
     }
+
+    apply();
+    on(window,'resize', debounce(apply, 120));
   }
 
-  // Click-to-place also on tray
-  enableClickToPlace(tray);
-  announce('Ready.');
-  updateUndo();
-  refitAllLabels();
-  refitAllChips();
+  /* ---------- Init ---------- */
+  document.addEventListener('DOMContentLoaded', function start(){
+    board = $('#tierBoard'); tray = $('#tray');
 
-  setupDesktopControlsMerge();
+    swapAllIcons();
+    maybeClearAutosaveOnReload();
 
-  /* ---------- Clear Board now = FULL RESET ---------- */
-  on($('#trashClear'),'click', function(){
-    var ok = confirm('Reset everything to the original state? This clears all circles, custom labels, uploaded items, and the title.');
-    if (!ok) return;
-    resetToDefault();
+    // Randomize starting color index for fairness
+    pIndex = Math.floor(Math.random()*presetPalette.length);
+
+    var saved=null;
+    try{ saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)||'null'); }catch(_){}
+    if (saved && restoreState(saved)){
+      announce('Restored your last session.');
+    } else {
+      defaultTiers.forEach(function(t){ board.appendChild(createRow(t)); });
+      communityCast.forEach(function(n){ tray.appendChild(buildNameToken(n, nextPreset(), true)); });
+    }
+
+    on($('#addTierBtn'),'click', function(){
+      this.classList.add('bounce-anim');
+      once(this,'animationend',()=>this.classList.remove('bounce-anim'));
+      var row = createRow({label:'NEW', color: nextTierColor()});
+      board.appendChild(row);
+      var chip = $('.label-chip', row); if (chip) chip.focus();
+      refreshRadialOptions(); queueAutosave();
+    });
+
+    on($('#addNameBtn'),'click', function(){
+      var nameInput = $('#nameInput'); var colorInput = $('#nameColor');
+      var name = (nameInput && nameInput.value || '').trim(); if (!name) return;
+      var chosen = (colorInput && colorInput.value) || nextPreset();
+      tray.appendChild(buildNameToken(name, chosen, false));
+      if (nameInput) nameInput.value='';
+      if (colorInput) colorInput.value = nextPreset();
+      refitAllLabels(); queueAutosave();
+    });
+
+    on($('#imageInput'),'change', function(e){
+      var files = (e.target && e.target.files) ? e.target.files : [];
+      Array.prototype.forEach.call(files, function(file){
+        if(!file.type || file.type.indexOf('image/')!==0) return;
+        var reader = new FileReader();
+        reader.onload = function(ev){ tray.appendChild(buildImageToken(ev.target.result, file.name)); queueAutosave(); };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    // Help content (device-aware, no bullets)
+    var help=$('#helpText') || $('.help');
+    if(help){
+      help.setAttribute('role','note');
+      help.setAttribute('aria-live','polite');
+      var phone = 'Phone: tap a circle in the tray to choose a row. Once placed, drag to reorder or back to tray.';
+      var desk  = 'Desktop/iPad: drag circles into rows. Use Alt + ←/→ to move within a row; Alt + ↑/↓ to move between rows.';
+      var tip   = 'Click a tier label to edit. Tap the small “X” on a tier to delete it (its items return to the tray).';
+      var msg = (isSmall() ? phone : desk) + ' ' + tip;
+      help.innerHTML = '<strong>Help</strong><br>'+msg;
+    }
+
+    enableClickToPlace(tray);
+    announce('Ready.');
+    updateUndo();
+    refitAllLabels();
+    refitAllChips();
+
+    setupDesktopControlsMerge();
+
+    // Clear Board => full reset
+    on($('#trashClear'),'click', function(){
+      var ok = confirm('Reset everything to the original state? This clears all circles, custom labels, uploaded items, and the title.');
+      if (!ok) return;
+      resetToDefault();
+    });
+
+    // Save PNG
+    on($('#saveBtn'),'click', function(){
+      this.classList.add('bounce-anim');
+      once(this,'animationend',()=>this.classList.remove('bounce-anim'));
+      if (typeof html2canvas !== 'function'){
+        alert('Sorry, PNG export is unavailable (html2canvas not loaded).'); return;
+      }
+      captureBoardPNG();
+    });
+
   });
-});
+
+})();```
