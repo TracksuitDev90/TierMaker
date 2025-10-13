@@ -1,7 +1,5 @@
 /* =========================================================
-   Tier Maker — CSS (MD3-lean, accessible, robust export)
-   - Cohesion pass: buttons, typography, tokens, creator spacing
-   - Print-safe, older-browser fallbacks
+   Tier Maker — CSS (dark, MD3-lean, aligned controls)
 ========================================================= */
 
 /* ---------- Reset ---------- */
@@ -13,335 +11,169 @@ body{
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
   color:var(--text); background:var(--surface); overscroll-behavior:none;
 }
-@media (min-width:1200px){ body{ font-size:17px } }
 img{max-width:100%;display:block}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 input,textarea{font:inherit;color:inherit}
-:focus-visible{
-  outline:2px solid transparent;
-  box-shadow:0 0 0 3px rgba(139,125,255,.45);
-  border-radius:8px
-}
+:focus-visible{outline:2px solid transparent; box-shadow:0 0 0 3px rgba(139,125,255,.45); border-radius:8px}
 a{color:inherit;text-decoration:none}
-::selection{ background:rgba(226,229,64,.28) }
 
-/* ---------- Theme (brand palette) ---------- */
+/* ---------- Theme ---------- */
 :root{
-  /* Surfaces */
   --surface:#0f1115;
   --surface-raised:#151820;
-  --card:#1E1E1E; /* eerie black */
+  --card:#1e1e1e;
 
-  /* Brand / accents */
-  --brand:#E2E540;  /* pear */
-  --accent:#6C3BF0; /* violet */
-  --mint:#B6F5E6;
+  --brand:#E2E540;   /* pear */
+  --accent:#6C3BF0;  /* violet */
   --lemon:#EEEDC9;
+  --danger:#F05C58;
 
-  /* Text & misc */
   --text:#E8EAF0; --muted:#A7B0C0; --border:rgba(255,255,255,.08);
-  --radius-xl: 18px; --radius-xxl: 22px;
-  --elev-1: 0 2px 6px rgba(0,0,0,.18);
-  --shadow: 0 0 #000; /* fallback token for var(--shadow) refs */
-  --chip-min-h: 138px; /* simplify calc(110px + 28px) */
+  --radius-xl:18px; --radius-xxl:22px;
+  --shadow:0 2px 6px rgba(0,0,0,.18);
 }
 
 /* ---------- Layout ---------- */
-.wrap{
-  max-width:1200px;margin:0 auto;padding:clamp(16px,2.4vw,28px);
-  display:flex;flex-direction:column;
+.wrap{max-width:1200px;margin:0 auto;padding:clamp(16px,2.4vw,28px);display:flex;flex-direction:column}
+.header{display:flex;align-items:center;margin-bottom:14px}
+.brand{font-weight:1000;letter-spacing:.2px;color:var(--brand);font-size:clamp(31px,5.5vw,51px)}
 
-  /* Fallback first */
-  background: var(--surface);
-
-  /* Decorative vignettes with broad support */
-  background-image:
-    radial-gradient(1000px 500px at 10% -10%, rgba(255,255,255,.02), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, rgba(0,0,0,.12), transparent 60%);
-  background-blend-mode: soft-light, normal;
-}
-.header{display:flex;align-items:center;gap:14px;margin-bottom:14px}
-.brand{
-  font-weight:1000;letter-spacing:.2px;color:var(--brand);
-  font-size:clamp(31px,5.5vw,51px);position:sticky;top:14px;z-index:20
-}
-@media (max-width:1023px){.brand{position:static}}
-
-/* ---------- Panels (glassy surfaces w/ fallbacks) ---------- */
-/* Fallback (no backdrop-filter) uses solid backgrounds */
+/* ---------- Panels ---------- */
 .panel{
-  position:relative;
-  background: var(--card);
+  background:var(--card);
   border:1px solid var(--border);
   border-radius:var(--radius-xl);
-  box-shadow: var(--elev-1);
-  padding:clamp(14px,1.8vw,18px); margin-bottom:16px; overflow:visible;
+  box-shadow:var(--shadow);
+  padding:clamp(14px,1.8vw,18px);
+  margin-bottom:16px;
 }
-@supports (backdrop-filter: blur(8px)) {
-  .panel, .tier-drop{
-    /* color-mix() fallback is already the solid above; keep this progressive */
-    background:
-      linear-gradient(180deg,
-        color-mix(in srgb, var(--card) 84%, transparent),
-        color-mix(in srgb, var(--card) 70%, transparent)) padding-box,
-      linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.04)) border-box;
-    border:1px solid transparent;
-    backdrop-filter: blur(12px) saturate(1.1);
-  }
-  .panel::before, .tier-drop::before{
-    content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 18%),
-      radial-gradient(60% 40% at 50% -10%, rgba(255,255,255,.08), transparent 70%);
-    mix-blend-mode:soft-light; opacity:.75;
-  }
-}
-.section-title{
-  font-size:clamp(18px,2vw,24px);
-  font-weight:900;
-  line-height:1.2;
-  letter-spacing:.1px;
-  margin:0 0 14px
-}
-
-/* ---------- Creator ---------- */
-.creator-grid .creator-line{display:flex;align-items:center;gap:12px}
-.creator-grid .creator-line + .creator-line{margin-top:12px}
-.color-dot{margin-left:6px}
-#imageInput{margin-top:10px;display:inline-block}
-input[type="file"]::-webkit-file-upload-button{
-  background: var(--brand);
-  border: 1px solid rgba(0,0,0,.2);
-  padding: 10px 16px; border-radius: 16px; font-weight: 800;
-  color:#111; cursor:pointer;
-}
-input[type="file"]{ color:var(--muted); margin-left:0 }
-.file-help-spacer{ margin-left:5px } /* “no file selected” offset */
-
-/* ---------- Controls (mobile grid) ---------- */
-.controls{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}
-@media (max-width:900px){.controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:720px){.controls{grid-template-columns:1fr 1fr}}
-
-.btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:10px;
-  height:56px;padding:0 18px;border-radius:var(--radius-xxl);
-  background:var(--surface);color:var(--text);
-  border:1px solid rgba(255,255,255,.08);
-  box-shadow: var(--elev-1);
-  transition:transform .08s ease,background .2s ease,border-color .2s ease,filter .2s ease;
-  user-select:none; -webkit-user-select:none;
-}
-.btn:hover{transform:translateY(-1px)}
-.btn:active{transform:translateY(0);filter:brightness(.98)}
-.btn .ico{width:22px;height:22px;display:grid;place-items:center}
-.btn .ico svg,.btn .ico img{width:22px;height:22px;display:block}
-#addTierBtn{background:var(--brand);color:#111;border-color:rgba(0,0,0,.16)}
-#undoBtn{background:var(--lemon);color:#111;border-color:rgba(0,0,0,.12)}
-#trashClear{background:#F05C58;color:#111;border-color:rgba(255,255,255,.18)}
-#saveBtn{background:var(--accent);color:#fff;border-color:rgba(255,255,255,.15)}
-.btn.small{height:42px;padding:0 12px;border-radius:12px;font-weight:800}
-@keyframes btn-bounce{0%{transform:scale(1)}30%{transform:scale(1.08)}60%{transform:scale(0.98)}100%{transform:scale(1)}}
-.btn.bounce-anim{animation:btn-bounce .48s cubic-bezier(.34,1.56,.64,1)}
+.section-title{font-size:clamp(18px,2vw,24px);font-weight:900;margin:0 0 14px}
 
 /* ---------- Board ---------- */
 .board-title-wrap{display:flex;align-items:center;gap:8px;margin:0 0 18px}
-.title-pen{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:transparent;border:0;margin-right:4px;opacity:.8}
+.title-pen{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;opacity:.8}
 .title-pen:hover{opacity:1}
-.title-pen svg{width:18px;height:18px;fill:currentColor;display:block}
-.board-title{
-  font-size:clamp(20px,2.2vw,28px);
-  font-weight:900; line-height:1.2; letter-spacing:.1px; margin:0;
-  text-shadow:0 1px 0 rgba(0,0,0,.25)
-}
-/* Placeholder visible text; JS will ensure aria-label */
-.board-title[contenteditable]:empty::before{content:'Tier Board (optional title)';color:var(--muted)}
-/* Use brand dashed underline color */
-.board-title[contenteditable="true"]{border-bottom:2px dashed var(--brand);border-radius:0}
-.board-title[contenteditable="true"]:focus{outline:0;box-shadow:none;border-bottom:2px solid var(--brand)}
+.title-pen svg{display:block}
 
-.exporting .title-pen{display:none}
-.exporting .board-title[contenteditable]{border:0}
-.exporting .board-title[contenteditable]:empty::before{content:''!important}
-.exporting.no-title .board-title-wrap{display:none}
+.board-title{
+  font-size:clamp(20px,2.2vw,28px);font-weight:900;margin:0;text-shadow:0 1px 0 rgba(0,0,0,.25)
+}
+.board-title[contenteditable]:empty::before{content:'Tier Board (optional title)';color:var(--muted)}
+.board-title[contenteditable="true"]{border-bottom:2px dashed var(--brand)}
+.board-title[contenteditable="true"]:focus{outline:0;box-shadow:none;border-bottom:2px solid var(--brand)}
 
 /* ---------- Tier board grid ---------- */
 #tierBoard{display:grid;gap:12px}
-.tier-row{
-  position:relative;
-  display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch;
-  transition:max-height .28s ease, opacity .24s ease, box-shadow .25s cubic-bezier(.2,.8,.2,1), transform .25s cubic-bezier(.2,.8,.2,1);
-  overflow:hidden;border-radius:var(--radius-xl);
-  box-shadow: var(--elev-1);
-}
-.tier-row:hover{ transform:translateY(-1px) }
-.tier-row.removing{max-height:0;opacity:0}
+.tier-row{display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:stretch;border-radius:var(--radius-xl)}
+.tier-row.removing{max-height:0!important;opacity:0}
 @media (max-width:768px){ .tier-row{grid-template-columns:140px 1fr} }
 
-/* --- TIER LABEL COLUMN --- */
+/* Label column */
 .tier-label{
-  position:relative;
-  background:transparent;
-  border:1px solid rgba(0,0,0,.14);
-  border-radius:16px;
-  padding:12px;
-  display:flex;align-items:center;justify-content:center;
-  min-height:var(--chip-min-h);
-  overflow:hidden; box-shadow:none;
+  position:relative;border-radius:16px;padding:12px;display:flex;align-items:center;justify-content:center;
+  border:1px solid rgba(0,0,0,.14)
 }
-/* remove leftover pseudo elements without !important */
-.tier-label::before{content:'';display:none}
-
 .label-chip{
-  position:relative;width:100%;max-width:100%;
-  background:transparent;color:#111;
-  display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:32px;line-height:1.15;
-  text-transform:uppercase;letter-spacing:.5px;user-select:none;-webkit-user-select:none;
-  white-space:normal;text-align:center;
-  padding:10px 12px 12px;
-  overflow:hidden;word-break:break-word;hyphens:auto;overflow-wrap:break-word;
+  background:transparent; color:#111; display:flex; align-items:center; justify-content:center;
+  font-weight:900; font-size:32px; line-height:1.15; text-transform:uppercase; letter-spacing:.5px;
+  padding:10px 12px; text-align:center; word-break:break-word; hyphens:auto;
 }
-.row-handle{display:none}
-
-/* Row delete X */
 .row-del{
-  position:absolute;right:8px;bottom:8px;width:36px;height:36px;border-radius:9px;
-  color:#fff;display:grid;place-items:center;
-  box-shadow:var(--elev-1);border:1px solid rgba(255,255,255,.18);
-  font-weight:900;z-index:8;background:#00000055;
+  position:absolute; right:8px; bottom:8px; width:32px; height:32px; border-radius:9px; color:#fff;
+  display:grid; place-items:center; border:1px solid rgba(255,255,255,.18); box-shadow:var(--shadow)
 }
 .row-del svg{width:16px;height:16px;fill:currentColor}
 
-/* Drops */
+/* Drop area */
 .tier-drop{
-  position:relative;
-  background:var(--card);
+  background:var(--surface-raised);
   border:1px solid var(--border);
   border-radius:16px;
   padding:14px;
-  display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
-  align-content:start;gap:10px;
-  min-height:var(--chip-min-h);
-  will-change:contents;
-  box-shadow: var(--elev-1);
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
+  gap:10px;
+  min-height:138px;
 }
-.tier-drop:focus-visible{box-shadow:0 0 0 3px rgba(139,125,255,.35)}
-/* :has fallback: no functional dependency—decorative only */
-@supports selector(:has(*)){
-  .tier-drop:has(.token.animate-drop)::after{
-    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:1;
-    background:linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
-    background-size:200% 100%; animation:drop-sweep .9s cubic-bezier(.2,.8,.2,1);
-  }
-}
-@keyframes drop-sweep{from{background-position:-200% 0}to{background-position:200% 0}}
-@media (max-width:768px){ .tier-drop{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} }
 
 /* ---------- Tokens ---------- */
 .token{
-  position:relative;width:110px;height:110px;border-radius:999px;background:#7da7ff;
+  width:110px;height:110px;border-radius:999px;background:#7da7ff;
   display:flex;align-items:center;justify-content:center;
-  user-select:none;-webkit-user-select:none;cursor:pointer;transform:translateZ(0);
-  transition:transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s cubic-bezier(.2,.8,.2,1), filter .2s;
-  will-change:transform;
+  user-select:none; -webkit-user-select:none; cursor:pointer;
+  transition:transform .18s ease, box-shadow .18s ease;
   border:1px solid rgba(255,255,255,.06);
-  box-shadow:
-    0 .5px 0 rgba(255,255,255,.14) inset,
-    0 -1px 6px rgba(0,0,0,.18) inset,
-    0 10px 24px rgba(0,0,0,.30), 0 2px 6px rgba(0,0,0,.22);
+  box-shadow:0 10px 24px rgba(0,0,0,.30), 0 2px 6px rgba(0,0,0,.22);
 }
 .token:hover{transform:translateY(-2px) scale(1.015)}
-.token:active{transform:translateY(0) scale(.995)}
-.token:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
-.token .label{
-  padding:0 14px;text-align:center;font-weight:900;font-size:18px;line-height:1;
-  display:flex;align-items:center;justify-content:center;height:100%;
-  word-break:break-word;hyphens:auto;white-space:pre-wrap;color:#111;
-}
+.token .label{padding:0 14px;text-align:center;font-weight:900;font-size:18px;line-height:1;color:#111}
 .token img{width:100%;height:100%;object-fit:cover;border-radius:999px;pointer-events:none}
 .token.selected{outline:3px solid var(--accent);outline-offset:4px}
-/* remove shimmer live (kept out entirely) */
-.token::after{content:none}
-
 @media (max-width:768px){ .token{width:96px;height:96px} }
 
-/* Drag feedback */
-.token.dragging-cue{ transform:scale(1.05); box-shadow:0 8px 20px rgba(0,0,0,.4) }
-@keyframes glint-pulse{ 0%,100%{opacity:.45;transform:scale(1)} 50%{opacity:.68;transform:scale(1.035)} }
-.drag-ghost,.token.dragging-cue{ isolation:isolate; }
+/* Drag */
 .drag-ghost{
   position:fixed;left:0;top:0;z-index:50;pointer-events:none;width:110px;height:110px;border-radius:999px;
-  opacity:.92;transform:translate3d(0,0,0);will-change:transform;filter:drop-shadow(0 18px 28px rgba(0,0,0,.45))
+  opacity:.92;transform:translate3d(0,0,0);filter:drop-shadow(0 18px 28px rgba(0,0,0,.45))
 }
 @media (max-width:768px){.drag-ghost{width:96px;height:96px}}
 .drag-hidden{opacity:.25}
 body.dragging-item{cursor:grabbing;user-select:none;-webkit-user-select:none}
-@keyframes pop-in{from{transform:scale(.94)}to{transform:scale(1)}}
-.animate-drop{animation:pop-in .18s ease}
 
-/* ---------- Storage (tray) ---------- */
-#tray{
-  background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;
-  box-shadow: var(--elev-1);
-  padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:14px;
+/* ---------- Storage + Controls ---------- */
+.storage-panel .storage-header{display:flex;align-items:center;justify-content:flex-start;margin-bottom:12px}
+.controls-row{display:flex;gap:12px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 18px;border-radius:16px;
+  background:var(--surface);color:var(--text);border:1px solid rgba(255,255,255,.08);box-shadow:var(--shadow)
 }
-@media (max-width:768px){ #tray{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} }
+.btn .ico{width:22px;height:22px;display:grid;place-items:center}
+.btn .ico svg{width:22px;height:22px;display:block}
+.btn.pear{background:var(--brand);color:#111;border-color:rgba(0,0,0,.16)}
+.btn.lemon{background:var(--lemon);color:#111;border-color:rgba(0,0,0,.12)}
+.btn.danger{background:var(--danger);color:#111}
+.btn.accent{background:var(--accent);color:#fff}
 
-/* ---------- Help ---------- */
-.help{ margin-top:8px }
-.help strong{ color: var(--accent) }
-.help .tip{ margin-top:6px; white-space:pre-line; color:var(--muted) }
+/* Creator alignment */
+.creator-grid .creator-line{display:flex;align-items:center;gap:12px}
+.input{height:48px;border-radius:12px;padding:0 14px;border:1px solid var(--border);background:#0c0e12;color:var(--text);min-width:260px}
+.color-dot{height:48px;width:48px;border-radius:12px;border:1px solid var(--border);background:#111;padding:0}
+.same-height{height:48px}
+#imageInput{appearance:none}
+input[type="file"]::-webkit-file-upload-button{
+  background: var(--brand); border: 1px solid rgba(0,0,0,.2);
+  padding: 10px 14px; border-radius: 12px; font-weight: 800; color:#111; cursor:pointer
+}
+input[type="file"]{color:var(--muted)}
+.file-note{margin-left:5px}
 
-/* ---------- A11y helpers ---------- */
-.sr,.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+/* Tray grid */
+.tray-grid{background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:14px}
+@media (max-width:768px){ .tray-grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} }
 
-/* ---------- Radial picker (mobile) ---------- */
-.radial{position:fixed;inset:0;z-index:60;pointer-events:auto;filter:drop-shadow(0 8px 24px rgba(0,0,0,.35));touch-action:none;}
+/* Radial */
+.radial{position:fixed;inset:0;z-index:60}
 .radial.hidden{display:none}
 .radial-options{position:relative;width:100%;height:100%}
 .radial-option{position:absolute;width:56px;height:56px;border-radius:999px;transform:translate(-50%,-50%)}
-.radial-option .dot{
-  width:42px;height:42px;border-radius:999px;display:grid;place-items:center;
-  font-weight:900;font-size:13px;background:#fff;color:#111;
-  border:1px solid rgba(0,0,0,.1);box-shadow:0 2px 10px rgba(0,0,0,.15);
-}
-.radial-option.is-hot .dot{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.22);transform:scale(1.06)}
+.radial-option .dot{width:42px;height:42px;border-radius:999px;display:grid;place-items:center;font-weight:900;font-size:13px;border:1px solid rgba(0,0,0,.1);box-shadow:0 2px 10px rgba(0,0,0,.15)}
 .radial-close{position:absolute;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:999px;border:1px solid var(--border);background:var(--surface-raised);color:var(--text);display:grid;place-items:center;box-shadow:0 2px 10px rgba(0,0,0,.25)}
-.radial-close svg{width:22px;height:22px;fill:currentColor}
-@media (max-width:768px){
-  .radial{backdrop-filter:none !important;background:transparent !important}
-}
+.radial-close svg{width:22px;height:22px}
 
-/* ---------- Export safety ---------- */
+/* Export state */
 .exporting .token,
-.exporting .token:hover,
-.exporting .animate-drop,
-.exporting .flip-anim{ transform:none !important; }
+.exporting .token:hover{transform:none!important}
+.exporting .token::after{display:none!important}
 .exporting .panel,
-.exporting .tier-drop{
-  backdrop-filter:none !important;
-  background: var(--surface-raised) !important;
-  border-color: var(--border) !important;
-}
-.exporting .tier-label{box-shadow:none}
+.exporting .tier-drop{backdrop-filter:none!important;background:var(--surface-raised)!important;border-color:var(--border)!important}
+.exporting .board-title[contenteditable]:empty::before{content:''!important}
+.exporting.no-title .board-title-wrap{display:none!important}
 
-/* ---------- Desktop inline-controls in Storage header ---------- */
-@media (min-width:1025px){
-  .section-bar{
-    display:flex; align-items:center; justify-content:flex-start;
-    column-gap:12px; row-gap:8px; margin-bottom:12px;
-  }
-  .controls-inline{
-    display:flex; gap:12px; align-items:center; flex-wrap:nowrap;
-    margin-left:clamp(28px, 8.2vw, 160px);
-  }
-  .controls-inline .btn{height:44px; padding:0 14px; border-radius:14px; font-weight:800}
-  .controls-inline .ico svg,.controls-inline .ico img{width:18px;height:18px}
-}
+/* A11y helper */
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%)}
 
-/* ---------- Print ---------- */
+/* Print */
 @media print{
-  body{background:#fff;color:#000}
-  .panel,#tray,.creator-grid,.controls,.radial,.row-del,.title-pen{display:none !important}
+  .panel,.tray-grid,.controls-row,.creator-grid,.radial{display:none!important}
+  #boardPanel{display:block !important}
 }
